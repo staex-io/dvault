@@ -1,0 +1,3 @@
+type Error = variant { Internal };
+type Result = variant { Ok : text; Err : Error };
+service : { invoke_test : (text) -> (Result) query }

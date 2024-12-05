@@ -1,6 +1,9 @@
 [workspace]
-members = ["dvaultd", "contracts/icp/dvault/src/dvault_backend"]
-default-members = ["dvaultd", "contracts/icp/dvault/src/dvault_backend"]
+members = ["dvaultd", "contracts/icp"]
+default-members = ["dvaultd", "contracts/icp"]
 resolver = "2"
 
 [workspace.dependencies]
+serde = { version = "1.0.215", features = [], default-features = false }
+k256 = { version = "0.13.4", features = ["ecdsa", "pkcs8"], default-features = false }
+candid = { version = "0.10.10", features = [], default-features = false }

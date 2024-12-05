@@ -1,11 +1,12 @@
 [package]
-name = "dvault_backend"
+name = "dvault"
 version = "0.1.0"
 edition = "2021"
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "lib"]
 
 [dependencies]
-candid = { version = "0.10.10", features = [], default-features = false }
+serde = { workspace = true }
+candid = { workspace = true }
 ic-cdk = { version = "0.17.0", features = [], default-features = false }

@@ -4,3 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+dvault = { path = "../contracts/icp", features = [], default-features = false }
+serde = { workspace = true }
+candid = { workspace = true }
+ic-agent = { version = "0.39.1", features = [], default-features = true }
+tokio = { version = "1.42.0", features = ["macros", "rt-multi-thread"], default-features = false }
+serde_json = { version = "1.0.133", features = [], default-features = false }

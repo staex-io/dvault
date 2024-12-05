@@ -1,8 +1,8 @@
 {
   "canisters": {
-    "dvault_backend": {
-      "candid": "src/dvault_backend/dvault_backend.did",
-      "package": "dvault_backend",
+    "dvault": {
+      "candid": "dvault.did",
+      "package": "dvault",
       "type": "rust"
     }
   },
