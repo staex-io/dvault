@@ -1,0 +1,6 @@
+[workspace]
+members = ["dvaultd", "contracts/icp/dvault/src/dvault_backend"]
+default-members = ["dvaultd", "contracts/icp/dvault/src/dvault_backend"]
+resolver = "2"
+
+[workspace.dependencies]

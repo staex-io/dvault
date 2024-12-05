@@ -1,0 +1,5 @@
+# We use 120 to avoid warnings on fmt because of macros.
+# https://github.com/rust-lang/rustfmt/issues/5404
+max_width = 120
+chain_width = 110
+fn_call_width = 110

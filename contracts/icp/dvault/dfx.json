@@ -1,0 +1,17 @@
+{
+  "canisters": {
+    "dvault_backend": {
+      "candid": "src/dvault_backend/dvault_backend.did",
+      "package": "dvault_backend",
+      "type": "rust"
+    }
+  },
+  "defaults": {
+    "build": {
+      "args": "",
+      "packtool": ""
+    }
+  },
+  "output_env_file": ".env",
+  "version": 1
+}
