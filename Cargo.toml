@@ -5,5 +5,7 @@ resolver = "2"
 
 [workspace.dependencies]
 serde = { version = "1.0.215", features = [], default-features = false }
-k256 = { version = "0.13.4", features = ["ecdsa", "pkcs8"], default-features = false }
 candid = { version = "0.10.10", features = [], default-features = false }
+ic-agent = { version = "0.39.1", features = [], default-features = true }
+serde_json = { version = "1.0.133", features = [], default-features = false }
+tokio = { version = "1.42.0", features = ["macros", "rt-multi-thread"], default-features = false }

@@ -10,3 +10,10 @@ crate-type = ["cdylib", "lib"]
 serde = { workspace = true }
 candid = { workspace = true }
 ic-cdk = { version = "0.17.0", features = [], default-features = false }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+ic-agent = { workspace = true }
+rand = { version = "0.8.5", features = [], default-features = false }
+k256 = { version = "0.13.4", features = ["ecdsa", "pkcs8"], default-features = false }
+tokio = { workspace = true }

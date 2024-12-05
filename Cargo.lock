@@ -384,8 +384,13 @@ name = "dvault"
 version = "0.1.0"
 dependencies = [
  "candid",
+ "ic-agent",
  "ic-cdk",
+ "k256",
+ "rand",
  "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

@@ -7,6 +7,6 @@ edition = "2021"
 dvault = { path = "../contracts/icp", features = [], default-features = false }
 serde = { workspace = true }
 candid = { workspace = true }
-ic-agent = { version = "0.39.1", features = [], default-features = true }
-tokio = { version = "1.42.0", features = ["macros", "rt-multi-thread"], default-features = false }
-serde_json = { version = "1.0.133", features = [], default-features = false }
+ic-agent = { workspace = true }
+tokio = { workspace = true }
+serde_json = { workspace = true }
