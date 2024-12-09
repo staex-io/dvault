@@ -1,16 +1,197 @@
-use candid::{CandidType, Deserialize};
+use std::borrow::Cow;
+use std::cell::RefCell;
+use std::collections::HashMap;
 
-pub type Res<T> = Result<T, Error>;
+use candid::{CandidType, Decode, Deserialize, Encode, Principal};
+use ic_stable_structures::memory_manager::{MemoryId, VirtualMemory};
+use ic_stable_structures::storable::Bound;
+use ic_stable_structures::StableBTreeMap;
+use ic_stable_structures::{memory_manager::MemoryManager, DefaultMemoryImpl, Storable};
 
-#[derive(CandidType, Deserialize, Default, PartialEq, Debug)]
-pub enum Error {
-    #[default]
-    Internal,
+thread_local! {
+    static MEMORY_MANAGER: RefCell<MemoryManager<DefaultMemoryImpl>> = RefCell::new(MemoryManager::init(DefaultMemoryImpl::default()));
+    static PRINCIPAL_DATA: RefCell<StableBTreeMap<Principal, PrincipalData, VirtualMemory<DefaultMemoryImpl>>> = RefCell::new(StableBTreeMap::init(MEMORY_MANAGER.with(|m| m.borrow().get(MemoryId::new(1)))));
 }
 
+pub const DECLARE_PUBLIC_DATA_METHOD: &str = "declare_public_data";
+pub const DECLARE_PRIVATE_DATA_METHOD: &str = "declare_private_data";
+pub const REVOKE_PUBLIC_DATA_METHOD: &str = "revoke_public_data";
+pub const REVOKE_PRIVATE_DATA_METHOD: &str = "revoke_private_data";
+pub const GET_PUBLIC_DATA_METHOD: &str = "get_public_data";
+pub const GET_PRIVATE_DATA_METHOD: &str = "get_private_data";
+
+// Canister result.
+pub type CResult<T> = Result<T, CError>;
+
+// Canister error.
+#[derive(CandidType, Deserialize, Default, PartialEq, Debug)]
+pub enum CError {
+    #[default]
+    Internal,
+    NotFound,
+}
+
+#[derive(CandidType, Deserialize, Default, Clone)]
+#[cfg_attr(test, derive(Debug))]
+pub struct PublicData {
+    pub data: Vec<u8>,
+}
+
+#[derive(CandidType, Deserialize, Default, Clone)]
+#[cfg_attr(test, derive(Debug))]
+pub struct PrivateData {
+    pub hash: String,
+    pub ipfs_cid: String,
+}
+
+#[derive(CandidType, Deserialize, Default)]
+struct PrincipalData {
+    public_data: HashMap<String, PublicData>,
+    private_data: HashMap<String, PrivateData>,
+}
+impl_storable!(PrincipalData);
+
+// Use this method if you want to claim that this public data is trusted to the caller.
+// Can be used for notifications and integrity purposes.
+// Also IPFS can be avoided to download data.
+#[ic_cdk::update]
+fn declare_public_data(id: String, data: Vec<u8>) -> CResult<()> {
+    let caller = ic_cdk::api::caller();
+    declare_public_data_(caller, id, data)
+}
+
+// Declare private encrypted data which can be downloaded through IPFS.
+#[ic_cdk::update]
+fn declare_private_data(id: String, hash: String, ipfs_cid: String) -> CResult<()> {
+    let caller = ic_cdk::api::caller();
+    declare_private_data_(caller, id, hash, ipfs_cid)
+}
+
+// Revoke public data.
+#[ic_cdk::update]
+fn revoke_public_data(id: String) -> CResult<()> {
+    let caller = ic_cdk::api::caller();
+    revoke_public_data_(caller, id)
+}
+
+// Revoke private data.
+#[ic_cdk::update]
+fn revoke_private_data(id: String) -> CResult<()> {
+    let caller = ic_cdk::api::caller();
+    revoke_private_data_(caller, id)
+}
+
+// Get on-chain public data.
 #[ic_cdk::query]
-fn invoke_test(message: String) -> Res<String> {
-    Ok(format!("dvault test: {}!", message))
+fn get_public_data(principal: Principal, id: String) -> CResult<PublicData> {
+    let principal_data = PRINCIPAL_DATA.with(|inner| inner.borrow().get(&principal).unwrap_or_default());
+    Ok(principal_data.public_data.get(&id).ok_or(CError::NotFound)?.clone())
+}
+
+// Get on-chain private data.
+#[ic_cdk::query]
+fn get_private_data(principal: Principal, id: String) -> CResult<PrivateData> {
+    let principal_data = PRINCIPAL_DATA.with(|inner| inner.borrow().get(&principal).unwrap_or_default());
+    Ok(principal_data.private_data.get(&id).ok_or(CError::NotFound)?.clone())
+}
+
+fn declare_public_data_(caller: Principal, id: String, data: Vec<u8>) -> CResult<()> {
+    let mut principal_data = PRINCIPAL_DATA.with(|inner| inner.borrow().get(&caller).unwrap_or_default());
+    principal_data.public_data.insert(id.clone(), PublicData { data });
+    PRINCIPAL_DATA.with(|inner| inner.borrow_mut().insert(caller, principal_data));
+    Ok(())
+}
+
+fn declare_private_data_(caller: Principal, id: String, hash: String, ipfs_cid: String) -> CResult<()> {
+    let mut principal_data = PRINCIPAL_DATA.with(|inner| inner.borrow().get(&caller).unwrap_or_default());
+    principal_data.private_data.insert(id.clone(), PrivateData { hash, ipfs_cid });
+    PRINCIPAL_DATA.with(|inner| inner.borrow_mut().insert(caller, principal_data));
+    Ok(())
+}
+
+fn revoke_public_data_(caller: Principal, id: String) -> CResult<()> {
+    let mut principal_data = PRINCIPAL_DATA.with(|inner| inner.borrow_mut().get(&caller).ok_or(CError::NotFound))?;
+    principal_data.public_data.remove(&id);
+    PRINCIPAL_DATA.with(|inner| inner.borrow_mut().insert(caller, principal_data));
+    Ok(())
+}
+
+fn revoke_private_data_(caller: Principal, id: String) -> CResult<()> {
+    let mut principal_data = PRINCIPAL_DATA.with(|inner| inner.borrow_mut().get(&caller).ok_or(CError::NotFound))?;
+    principal_data.private_data.remove(&id);
+    PRINCIPAL_DATA.with(|inner| inner.borrow_mut().insert(caller, principal_data));
+    Ok(())
 }
 
 ic_cdk::export_candid!();
+
+#[macro_export]
+macro_rules! impl_storable {
+    ($struct_name:ident) => {
+        impl Storable for $struct_name {
+            const BOUND: Bound = Bound::Bounded {
+                max_size: u32::MAX,
+                is_fixed_size: false,
+            };
+
+            fn from_bytes(bytes: std::borrow::Cow<[u8]>) -> Self {
+                Decode!(bytes.as_ref(), Self).unwrap()
+            }
+
+            fn to_bytes(&self) -> std::borrow::Cow<[u8]> {
+                Cow::Owned(Encode!(self).unwrap())
+            }
+        }
+    };
+}
+
+#[cfg(test)]
+mod tests {
+    use candid::Principal;
+
+    use crate::{
+        declare_private_data_, declare_public_data_, get_private_data, get_public_data, revoke_private_data_,
+        revoke_public_data_, CError,
+    };
+
+    #[test]
+    fn unit_test() {
+        let caller = Principal::anonymous();
+
+        // Test public data.
+        {
+            let err = get_public_data(caller, "asd_dsa".to_string()).unwrap_err();
+            assert_eq!(CError::NotFound, err);
+
+            let id = "asd_123".to_string();
+            let expected = vec![0, 1, 2];
+            declare_public_data_(caller, id.clone(), expected.clone()).unwrap();
+
+            let public_data = get_public_data(caller, id.clone()).unwrap();
+            assert_eq!(expected, public_data.data);
+
+            revoke_public_data_(caller, id.clone()).unwrap();
+            let err = get_public_data(caller, id).unwrap_err();
+            assert_eq!(CError::NotFound, err);
+        }
+
+        // Test private data.
+        {
+            let err = get_private_data(caller, "asd_dsa".to_string()).unwrap_err();
+            assert_eq!(CError::NotFound, err);
+
+            let id = "dsa_456".to_string();
+            let hash = "asd".to_string();
+            let ipfs_cid = "dsa".to_string();
+            declare_private_data_(caller, id.clone(), hash.clone(), ipfs_cid.clone()).unwrap();
+
+            let private_data = get_private_data(caller, id.clone()).unwrap();
+            assert_eq!(hash, private_data.hash);
+            assert_eq!(ipfs_cid, private_data.ipfs_cid);
+
+            revoke_private_data_(caller, id.clone()).unwrap();
+            let err = get_private_data(caller, id).unwrap_err();
+            assert_eq!(CError::NotFound, err);
+        }
+    }
+}

@@ -1,3 +1,14 @@
-type Error = variant { Internal };
-type Result = variant { Ok : text; Err : Error };
-service : { invoke_test : (text) -> (Result) query }
+type CError = variant { Internal; NotFound };
+type PrivateData = record { hash : text; ipfs_cid : text };
+type PublicData = record { data : blob };
+type Result = variant { Ok; Err : CError };
+type Result_1 = variant { Ok : PrivateData; Err : CError };
+type Result_2 = variant { Ok : PublicData; Err : CError };
+service : {
+  declare_private_data : (text, text, text) -> (Result);
+  declare_public_data : (text, blob) -> (Result);
+  get_private_data : (principal, text) -> (Result_1) query;
+  get_public_data : (principal, text) -> (Result_2) query;
+  revoke_private_data : (text) -> (Result);
+  revoke_public_data : (text) -> (Result);
+}

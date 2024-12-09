@@ -15,20 +15,18 @@ struct CanisterId {
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     let (agent, canister_id) = init_agent().await?;
-
+    let caller = agent.get_principal().map_err(map_io_err)?;
     let res = agent
-        .update(&canister_id, "invoke_test")
+        .query(&canister_id, dvault::GET_PRIVATE_DATA_METHOD)
         .with_effective_canister_id(canister_id)
-        .with_arg(Encode!(&"qwerty".to_string()).map_err(map_io_err)?)
-        .call_and_wait()
+        .with_arg(Encode!(&caller, &"asd_dsa".to_string()).map_err(map_io_err)?)
+        .call()
         .await
         .map_err(map_io_err)?;
-    let res = Decode!(res.as_slice(), dvault::Res<String>)
-        .map_err(map_io_err)?
-        .map_err(|_| "failed to decode invoking result".to_string())
-        .map_err(map_io_err)?;
-    eprintln!("{:?}", res);
-
+    let res = Decode!(res.as_slice(), dvault::CResult<dvault::PrivateData>).map_err(map_io_err)?;
+    if let Err(err) = res {
+        eprintln!("failed to get public data {:?}", err);
+    }
     Ok(())
 }
 

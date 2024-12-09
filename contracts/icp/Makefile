@@ -4,7 +4,10 @@ fmt:
 lint: fmt
 	cargo clippy --tests --all-targets --all-features -- -D warnings
 
-test: export_identity
+test:
+	cargo test tests::unit_test --jobs 1 -- --nocapture --test-threads 1 --exact
+
+test_e2e: export_identity
 	cargo test --jobs 1 -- --nocapture --test-threads 1 $(name)
 
 start:
