@@ -9,7 +9,7 @@ crate-type = ["cdylib", "lib"]
 [dependencies]
 serde = { workspace = true }
 candid = { workspace = true }
-ic-cdk = { version = "0.17.0", features = [], default-features = false }
+ic-cdk = { version = "0.17.1", features = [], default-features = false }
 ic-stable-structures = { version = "0.6.7", features = [], default-features = false }
 
 [dev-dependencies]
