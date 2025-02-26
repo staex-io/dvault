@@ -472,6 +472,8 @@ dependencies = [
  "clap",
  "dvault",
  "ic-agent",
+ "k256",
+ "rand",
  "serde",
  "serde_json",
  "tokio",

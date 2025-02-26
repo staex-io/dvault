@@ -16,5 +16,5 @@ ic-stable-structures = { version = "0.6.7", features = [], default-features = fa
 serde_json = { workspace = true }
 ic-agent = { workspace = true }
 tokio = { workspace = true }
-rand = { version = "0.8.5", features = [], default-features = false }
-k256 = { version = "0.13.4", features = ["ecdsa", "pkcs8"], default-features = false }
+k256 = { workspace = true }
+rand = { workspace = true }

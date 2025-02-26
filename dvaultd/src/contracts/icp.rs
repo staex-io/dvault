@@ -22,7 +22,8 @@ pub(crate) struct Client {
 
 impl Client {
     pub(crate) async fn new() -> std::io::Result<Client> {
-        let identity = Secp256k1Identity::from_pem_file("../contracts/icp/identity.pem").map_err(map_io_err)?;
+        let secret_key = k256::SecretKey::random(&mut rand::thread_rng());
+        let identity = Secp256k1Identity::from_private_key(secret_key);
         let agent =
             Agent::builder().with_url("http://127.0.0.1:7777").with_identity(identity).build().map_err(map_io_err)?;
         agent.fetch_root_key().await.map_err(map_io_err)?;

@@ -9,3 +9,5 @@ candid = { version = "0.10.13", features = [], default-features = false }
 ic-agent = { version = "0.39.1", features = ["pem"], default-features = false }
 serde_json = { version = "1.0.139", features = [], default-features = false }
 tokio = { version = "1.43.0", features = ["macros", "rt-multi-thread"], default-features = false }
+k256 = { version = "0.13.4", features = ["ecdsa", "pkcs8"], default-features = false }
+rand = { version = "0.8.5", features = [], default-features = false }
