@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::fmt::Display;
 
 use candid::{CandidType, Decode, Deserialize, Encode, Principal};
 use ic_stable_structures::memory_manager::{MemoryId, VirtualMemory};
@@ -31,6 +32,16 @@ pub enum CError {
     #[default]
     Internal,
     NotFound,
+}
+
+impl Display for CError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let c_error_str: &str = match self {
+            CError::Internal => "internal",
+            CError::NotFound => "not_found",
+        };
+        write!(f, "{}", c_error_str)
+    }
 }
 
 #[derive(CandidType, Deserialize, Default)]

@@ -10,3 +10,4 @@ candid = { workspace = true }
 ic-agent = { workspace = true }
 tokio = { workspace = true }
 serde_json = { workspace = true }
+clap = { version = "4.5.31", features = ["std", "derive", "help"], default-features = false }
