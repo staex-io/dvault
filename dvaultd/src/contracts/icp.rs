@@ -1,3 +1,5 @@
+use std::{fs, io};
+
 use candid::Principal;
 use candid::{Decode, Encode};
 use ic_agent::{identity::Secp256k1Identity, Agent};
@@ -22,8 +24,7 @@ pub(crate) struct Client {
 
 impl Client {
     pub(crate) async fn new() -> std::io::Result<Client> {
-        let secret_key = k256::SecretKey::random(&mut rand::thread_rng());
-        let identity = Secp256k1Identity::from_private_key(secret_key);
+        let identity = init_identity()?;
         let agent =
             Agent::builder().with_url("http://127.0.0.1:7777").with_identity(identity).build().map_err(map_io_err)?;
         agent.fetch_root_key().await.map_err(map_io_err)?;
@@ -48,4 +49,21 @@ impl Client {
         eprintln!("Result: {:?} {:?}", res.hash, res.ipfs_cid);
         Ok(())
     }
+}
+
+fn init_identity() -> std::io::Result<Secp256k1Identity> {
+    const FILENAME: &str = "identity_secret_key.txt";
+    let secret_key: k256::SecretKey = match fs::read(FILENAME) {
+        Ok(raw_identity) => k256::SecretKey::from_slice(&raw_identity).map_err(map_io_err)?,
+        Err(e) => match e.kind() {
+            io::ErrorKind::NotFound => {
+                let secret_key = k256::SecretKey::random(&mut rand::thread_rng());
+                fs::write(FILENAME, secret_key.to_bytes())?;
+                secret_key
+            }
+            e => return Err(e.into()),
+        },
+    };
+    let identity = Secp256k1Identity::from_private_key(secret_key);
+    Ok(identity)
 }
