@@ -18,6 +18,7 @@ service : {
   get_notification : (principal, nat64) -> (Result_1) query;
   get_private_data : (principal, text) -> (Result_2) query;
   get_public_data : (principal, text) -> (Result_3) query;
+  register_device : (principal) -> (Result);
   revoke_private_data : (text) -> (Result);
   revoke_public_data : (text) -> (Result);
 }

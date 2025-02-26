@@ -3,7 +3,7 @@ use core::panic;
 use candid::{Decode, Encode, Principal};
 use dvault::{
     Action, CError, PrivateData, PublicData, Visibility, DECLARE_PRIVATE_DATA_METHOD, DECLARE_PUBLIC_DATA_METHOD,
-    GET_NOTIFICATION, GET_PRIVATE_DATA_METHOD, GET_PUBLIC_DATA_METHOD, REVOKE_PRIVATE_DATA_METHOD,
+    GET_NOTIFICATION_METHOD, GET_PRIVATE_DATA_METHOD, GET_PUBLIC_DATA_METHOD, REVOKE_PRIVATE_DATA_METHOD,
     REVOKE_PUBLIC_DATA_METHOD,
 };
 use ic_agent::Agent;
@@ -201,7 +201,7 @@ async fn get_notification(
     index: usize,
 ) -> dvault::CResult<dvault::Notification> {
     let res = agent
-        .query(&canister_id, GET_NOTIFICATION)
+        .query(&canister_id, GET_NOTIFICATION_METHOD)
         .with_effective_canister_id(canister_id)
         .with_arg(Encode!(&caller, &index).unwrap())
         .call()

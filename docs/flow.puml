@@ -130,7 +130,7 @@ but for client same steps should work.
 end note
 
 admin -> contract: Revoke existing SSH key pair
-contract -> server: Notify about revokation
+contract -> server: Notify about revocation
 server -> server: Apply changes\n with SSH daemon
 
 ref over server

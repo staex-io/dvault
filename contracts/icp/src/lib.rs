@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Display;
 
 use candid::{CandidType, Decode, Deserialize, Encode, Principal};
@@ -13,6 +13,7 @@ thread_local! {
     static MEMORY_MANAGER: RefCell<MemoryManager<DefaultMemoryImpl>> = RefCell::new(MemoryManager::init(DefaultMemoryImpl::default()));
     static PRINCIPAL_DATA: RefCell<StableBTreeMap<Principal, PrincipalData, VirtualMemory<DefaultMemoryImpl>>> = RefCell::new(StableBTreeMap::init(MEMORY_MANAGER.with(|m| m.borrow().get(MemoryId::new(1)))));
     static NOTIFICATIONS: RefCell<StableBTreeMap<Principal, PrincipalNotifications, VirtualMemory<DefaultMemoryImpl>>> = RefCell::new(StableBTreeMap::init(MEMORY_MANAGER.with(|m| m.borrow().get(MemoryId::new(2)))));
+    static DEVICES: RefCell<StableBTreeMap<Principal, Devices, VirtualMemory<DefaultMemoryImpl>>> = RefCell::new(StableBTreeMap::init(MEMORY_MANAGER.with(|m| m.borrow().get(MemoryId::new(3)))));
 }
 
 pub const DECLARE_PUBLIC_DATA_METHOD: &str = "declare_public_data";
@@ -21,7 +22,8 @@ pub const REVOKE_PUBLIC_DATA_METHOD: &str = "revoke_public_data";
 pub const REVOKE_PRIVATE_DATA_METHOD: &str = "revoke_private_data";
 pub const GET_PUBLIC_DATA_METHOD: &str = "get_public_data";
 pub const GET_PRIVATE_DATA_METHOD: &str = "get_private_data";
-pub const GET_NOTIFICATION: &str = "get_notification";
+pub const GET_NOTIFICATION_METHOD: &str = "get_notification";
+pub const REGISTER_DEVICE_METHOD: &str = "register_device";
 
 // Canister result.
 pub type CResult<T> = Result<T, CError>;
@@ -92,6 +94,12 @@ pub enum Visibility {
     Private,
 }
 
+#[derive(CandidType, Deserialize, Default)]
+struct Devices {
+    inner: HashSet<Principal>,
+}
+impl_storable!(Devices);
+
 // Use this method if you want to claim that this public data is trusted to the caller.
 // Can be used for notifications and integrity purposes.
 // Also IPFS can be avoided to download data.
@@ -145,6 +153,29 @@ fn get_notification(principal: Principal, index: usize) -> CResult<Notification>
         .get(index)
         .ok_or(CError::NotFound)?
         .clone())
+}
+
+#[ic_cdk::update]
+fn register_device(principal: Principal) -> CResult<()> {
+    let caller = ic_cdk::api::caller();
+    DEVICES.with(|inner| {
+        let mut inner = inner.borrow_mut();
+        let devices = inner.get(&principal);
+        match devices {
+            Some(mut devices) => {
+                devices.inner.insert(caller);
+            }
+            None => {
+                inner.insert(
+                    principal,
+                    Devices {
+                        inner: HashSet::from_iter(vec![caller]),
+                    },
+                );
+            }
+        }
+    });
+    Ok(())
 }
 
 fn declare_public_data_(caller: Principal, id: String, data: Vec<u8>) -> CResult<()> {

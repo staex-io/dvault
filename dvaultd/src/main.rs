@@ -16,15 +16,27 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Run dVault daemon.
-    Run {},
+    Run {
+        /// Set device owner public key.
+        #[arg(short, long)]
+        #[arg(default_value = "yr2up-ssfuz-72ei2-ro7k2-n5hde-xtbik-guash-gnrec-pvung-3vsgv-5qe")]
+        device_owner_public_key: String,
+        /// Set file path to the file with secret key.
+        #[arg(short, long)]
+        #[arg(default_value = "secret_key.txt")]
+        secret_key_file: String,
+    },
 }
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Run {} => {
-            let icp_client = icp::Client::new().await?;
+        Commands::Run {
+            device_owner_public_key,
+            secret_key_file,
+        } => {
+            let icp_client = icp::Client::new(&device_owner_public_key, &secret_key_file).await?;
             icp_client.get_private_data().await?;
         }
     }
