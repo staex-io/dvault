@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 use crate::contracts::icp;
 
 mod contracts;
+mod ipfs;
 
 /// Command line utility to interact with dVault daemon.
 #[derive(Parser)]
@@ -38,6 +39,8 @@ async fn main() -> std::io::Result<()> {
         } => {
             let icp_client = icp::Client::new(&device_owner_public_key, &secret_key_file).await?;
             icp_client.get_private_data().await?;
+            let ipfs_client = ipfs::Client::new();
+            ipfs_client.save_data("/dvault/asd.txt", &[0, 1, 2]).await?;
         }
     }
     Ok(())
@@ -45,4 +48,8 @@ async fn main() -> std::io::Result<()> {
 
 pub(crate) fn map_io_err<T: ToString>(e: T) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::Other, e.to_string().as_str())
+}
+
+pub(crate) fn map_io_err_ctx<T: ToString, CTX: ToString>(e: T, ctx: CTX) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::Other, format!("{}: {}", ctx.to_string().as_str(), e.to_string().as_str()))
 }
