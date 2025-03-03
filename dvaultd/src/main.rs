@@ -1,4 +1,11 @@
-use std::{fs, io, str::from_utf8};
+use std::{
+    fs, io,
+    str::from_utf8,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+};
 
 use clap::{Parser, Subcommand};
 
@@ -13,6 +20,21 @@ mod ipfs;
 #[clap(name = "dvaultd")]
 #[command(author, version, about, long_about = None)]
 struct Cli {
+    /// dVault private key file.
+    #[arg(long)]
+    #[arg(default_value = "data/dvault_private_key.txt")]
+    dvault_private_key_file: String,
+    /// dVault public key file.
+    #[arg(long)]
+    #[arg(default_value = "data/dvault_public_key.txt")]
+    dvault_public_key_file: String,
+    /// Smart contract device owner public key.
+    #[arg(long)]
+    sc_owner_public_key: Option<String>,
+    /// Smart contract device private key.
+    #[arg(long)]
+    #[arg(default_value = "data/sc_private_key.txt")]
+    sc_device_private_key_file: String,
     #[clap(subcommand)]
     command: Commands,
 }
@@ -20,41 +42,44 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Run dVault daemon.
-    Run {
-        /// dVault private key file.
-        #[arg(long)]
-        #[arg(default_value = "data/dvault_private_key.txt")]
-        dvault_private_key_file: String,
-        /// dVault public key file.
-        #[arg(long)]
-        #[arg(default_value = "data/dvault_public_key.txt")]
-        dvault_public_key_file: String,
-        /// Smart contract device owner public key.
-        #[arg(long)]
-        sc_owner_public_key: Option<String>,
-        /// Smart contract device private key.
-        #[arg(long)]
-        #[arg(default_value = "data/sc_private_key.txt")]
-        sc_device_private_key_file: String,
+    Run {},
+    /// Broadcast data.
+    Broadcast {
+        /// Data to broadcast.
+        data: String,
     },
 }
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     let cli = Cli::parse();
+    let dvault_private_key_file = cli.dvault_private_key_file;
+    let dvault_public_key_file = cli.dvault_public_key_file;
+    let sc_owner_public_key = cli.sc_owner_public_key;
+    let sc_device_private_key_file = cli.sc_device_private_key_file;
+
+    let (dvault_private_key, dvault_public_key) = prepare_keys(dvault_private_key_file, dvault_public_key_file)?;
+    let icp_client = icp::Client::new(sc_owner_public_key, &dvault_public_key, &sc_device_private_key_file).await?;
+    let _ipfs_client = ipfs::Client::new();
+
     match cli.command {
-        Commands::Run {
-            dvault_private_key_file,
-            dvault_public_key_file,
-            sc_owner_public_key,
-            sc_device_private_key_file,
-        } => {
-            let (_, dvault_public_key) = prepare_keys(dvault_private_key_file, dvault_public_key_file)?;
-            let icp_client =
-                icp::Client::new(sc_owner_public_key, &dvault_public_key, &sc_device_private_key_file).await?;
-            icp_client.get_private_data().await?;
-            let ipfs_client = ipfs::Client::new();
-            ipfs_client.save_data("/dvault/asd.txt", &[0, 1, 2]).await?;
+        Commands::Run {} => {
+            let term = Arc::new(AtomicBool::new(false));
+            signal_hook::flag::register(signal_hook::consts::SIGTERM, Arc::clone(&term))?;
+            signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&term))?;
+            signal_hook::flag::register(signal_hook::consts::SIGQUIT, Arc::clone(&term))?;
+            while !term.load(Ordering::Relaxed) {}
+            eprintln!("\nReceived os signal to shutdown")
+        }
+        Commands::Broadcast { data } => {
+            let devices = icp_client.get_devices().await?;
+            for device in devices {
+                eprintln!(
+                    "Try to encrypt data for device: {}: ed25519 public key is: {}",
+                    device.0, device.1.ed25519_public_key
+                );
+                let cipher = crypto::init_cipher(&dvault_private_key, device.1.ed25519_public_key)?;
+            }
         }
     }
     Ok(())
@@ -71,7 +96,7 @@ pub(crate) fn map_io_err_ctx<T: ToString, C: ToString>(e: T, ctx: C) -> std::io:
 fn prepare_keys(dvault_private_key_file: String, dvault_public_key_file: String) -> std::io::Result<(String, String)> {
     let private_key = prepare_key(&dvault_private_key_file)?;
     let public_key = prepare_key(&dvault_public_key_file)?;
-    let (public_key, private_key) = if private_key.is_none() || public_key.is_none() {
+    let (public_key, private_key) = if private_key.is_none() && public_key.is_none() {
         let (new_private_key, new_public_key) = crypto::generate();
         fs::write(dvault_private_key_file, new_private_key.as_bytes())?;
         fs::write(dvault_public_key_file, new_public_key.as_bytes())?;
@@ -80,7 +105,6 @@ fn prepare_keys(dvault_private_key_file: String, dvault_public_key_file: String)
     } else {
         (private_key.unwrap(), public_key.unwrap())
     };
-
     eprintln!("Using dvault public key: {}", public_key);
     Ok((private_key, public_key))
 }
@@ -89,8 +113,8 @@ fn prepare_key(file: &str) -> std::io::Result<Option<String>> {
     match fs::read(file) {
         Ok(key) => Ok(Some(from_utf8(&key).map_err(map_io_err)?.to_string())),
         Err(e) => match e.kind() {
-            io::ErrorKind::NotFound => return Ok(None),
-            e => return Err(e.into()),
+            io::ErrorKind::NotFound => Ok(None),
+            e => Err(e.into()),
         },
     }
 }

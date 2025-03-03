@@ -6,7 +6,7 @@ use rand::rngs::OsRng;
 use sha2::{Digest, Sha512};
 use x25519_dalek::{PublicKey, SharedSecret, StaticSecret};
 
-use crate::map_io_err;
+use crate::{map_io_err, map_io_err_ctx};
 
 const NONCE_LENGTH: usize = 12;
 
@@ -28,14 +28,15 @@ impl Cipher {
     }
 }
 
-pub(crate) fn init_cipher(private_key: String, public_key: String) -> std::io::Result<Cipher> {
+pub(crate) fn init_cipher(private_key: &str, public_key: String) -> std::io::Result<Cipher> {
     let mut raw_private_key = [0; SECRET_KEY_LENGTH];
     B64_STANDARD.decode_slice(private_key, &mut raw_private_key).map_err(map_io_err)?;
     let private_key = ed25519_to_x25519_private_key(&raw_private_key);
 
     let mut raw_public_key = [0; PUBLIC_KEY_LENGTH];
     B64_STANDARD.decode_slice(public_key, &mut raw_public_key).map_err(map_io_err)?;
-    let public_key = ed25519_to_x25519_public_key(raw_public_key)?;
+    let public_key = ed25519_to_x25519_public_key(raw_public_key)
+        .map_err(|e| map_io_err_ctx(e, "failed to convert public key to x25519"))?;
 
     let shared_secret: SharedSecret = private_key.diffie_hellman(&public_key);
     Ok(Cipher {

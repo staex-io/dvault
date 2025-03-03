@@ -59,7 +59,7 @@ impl Client {
         } else {
             // So it is an owner. Let's see their registered devices.
             let devices = client.get_devices().await?;
-            if devices.len() == 0 {
+            if devices.is_empty() {
                 eprintln!("There are no registered devices")
             } else {
                 for (pk, device) in devices.iter() {
