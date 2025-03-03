@@ -7,7 +7,9 @@ use std::{
     },
 };
 
+use base64::{engine::general_purpose::STANDARD as B64_STANDARD, Engine};
 use clap::{Parser, Subcommand};
+use sha2::{Digest, Sha256};
 
 use crate::contracts::icp;
 
@@ -60,7 +62,7 @@ async fn main() -> std::io::Result<()> {
 
     let (dvault_private_key, dvault_public_key) = prepare_keys(dvault_private_key_file, dvault_public_key_file)?;
     let icp_client = icp::Client::new(sc_owner_public_key, &dvault_public_key, &sc_device_private_key_file).await?;
-    let _ipfs_client = ipfs::Client::new();
+    let ipfs_client = ipfs::Client::new();
 
     match cli.command {
         Commands::Run {} => {
@@ -78,7 +80,19 @@ async fn main() -> std::io::Result<()> {
                     "Try to encrypt data for device: {}: ed25519 public key is: {}",
                     device.0, device.1.ed25519_public_key
                 );
+
                 let cipher = crypto::init_cipher(&dvault_private_key, device.1.ed25519_public_key)?;
+                let ciphertext = cipher.encrypt(data.as_bytes())?;
+                let ipfs_cid = ipfs_client.save_data("/", &ciphertext).await?;
+
+                let id = uuid::Uuid::new_v4().to_string();
+                let hash = Sha256::digest(&data).to_vec();
+                let mut hash_b64 = String::new();
+                B64_STANDARD.encode_string(hash, &mut hash_b64);
+
+                icp_client.declare_private_data(id, hash_b64, ipfs_cid).await?;
+
+                eprintln!("Successfully broadcast private data to: {}", device.0);
             }
         }
     }

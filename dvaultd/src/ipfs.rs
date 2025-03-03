@@ -1,5 +1,4 @@
-use std::str::from_utf8;
-
+use base64::{engine::general_purpose::STANDARD as B64_STANDARD, Engine};
 use reqwest::multipart;
 use serde::Deserialize;
 
@@ -24,10 +23,10 @@ impl Client {
     }
 
     pub(crate) async fn save_data<T: ToString>(&self, filename: T, data: &[u8]) -> std::io::Result<String> {
-        let form = multipart::Form::new()
-            .text("name", "file")
-            .text("filename", filename.to_string())
-            .text("file", from_utf8(data).unwrap().to_string());
+        let mut file = String::new();
+        B64_STANDARD.encode_string(data, &mut file);
+        let form =
+            multipart::Form::new().text("name", "file").text("filename", filename.to_string()).text("file", file);
         let res = self
             .http_client
             .post(format!("{}/add?quieter=true", IPFS_API_URL))

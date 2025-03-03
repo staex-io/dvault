@@ -21,3 +21,4 @@ chacha20poly1305 = { version = "0.10.1", features = ["alloc", "getrandom"], defa
 sha2 = { version = "0.10.8", features = [], default-features = false }
 base64 = { version = "0.22.1", features = ["std"], default-features = false }
 signal-hook = { version = "0.3.17", features = [], default-features = false }
+uuid = { version = "1.15.1", features = ["v4"], default-features = false }

@@ -72,6 +72,18 @@ impl Client {
         Ok(client)
     }
 
+    pub(crate) async fn declare_private_data(&self, id: String, hash: String, ipfs_cid: String) -> std::io::Result<()> {
+        let res = self
+            .agent
+            .update(&self.canister_id, dvault::DECLARE_PRIVATE_DATA_METHOD)
+            .with_effective_canister_id(self.canister_id)
+            .with_arg(Encode!(&id, &hash, &ipfs_cid).map_err(map_io_err)?)
+            .call_and_wait()
+            .await
+            .map_err(map_io_err)?;
+        Decode!(res.as_slice(), dvault::CResult<()>).map_err(map_io_err)?.map_err(map_io_err)
+    }
+
     pub(crate) async fn get_private_data(&self) -> std::io::Result<()> {
         let res = self
             .agent
