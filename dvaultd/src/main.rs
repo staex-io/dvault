@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 use crate::contracts::icp;
 
 mod contracts;
+mod crypto;
 mod ipfs;
 
 /// Command line utility to interact with dVault daemon.
@@ -50,6 +51,6 @@ pub(crate) fn map_io_err<T: ToString>(e: T) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::Other, e.to_string().as_str())
 }
 
-pub(crate) fn map_io_err_ctx<T: ToString, CTX: ToString>(e: T, ctx: CTX) -> std::io::Error {
+pub(crate) fn map_io_err_ctx<T: ToString, C: ToString>(e: T, ctx: C) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::Other, format!("{}: {}", ctx.to_string().as_str(), e.to_string().as_str()))
 }

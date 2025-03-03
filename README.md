@@ -32,7 +32,9 @@ The simplest way to improve overall system security while working with SSH - oft
 
 With our system such flow can be done frequently and securely.
 
-## How it works (SSH use-case)
+## How it works
+
+We show how it works using SSH use-case.
 
 In simple words, we propose a way to generate a new key pair for any client or server by the admin user. Sign them using the Certificate Authority (CA). Then, using Diffie-Hellman key exchange, encrypt this key pair and distribute it through IPFS. To verify the integrity of the key pair, customer can use the smart contract. It can notify clients about new key pair availability through the smart contract and claim key pair hashes. After downloading it from IPFS and decryption, client can apply key pair locally (for example new SSH key pair or SSH CA). With such an approach, the **client** can be **sure** that this **key pair belongs** to the **particular admin** and can **trust** it. And by **encrypted way** of distribution **keys** can be **rotated often** to **improve** overall **system security.** Last but not least, everything can be done **without centralized servers** and **doesn't require** to have **own infrastructure.**
 
@@ -51,7 +53,9 @@ In simple words, we propose a way to generate a new key pair for any client or s
 9. Smart contracts are publicity available, everyone can check integrity logic and how system works.
 10. Only user which has smart contract private key can issue or revoke certificate, not centralized third-party layer.
 
-## Future work (use-cases)
+## Future work
+
+There are some use-cases for future work.
 
 ### Avoid centralized SSH certificate authority
 
