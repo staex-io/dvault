@@ -1,5 +1,6 @@
 type Action = variant { Declared; Revoked };
 type CError = variant { Internal; NotFound };
+type Device = record { ed25519_public_key : text };
 type Notification = record {
   id : text;
   action : Action;
@@ -8,17 +9,19 @@ type Notification = record {
 type PrivateData = record { hash : text; ipfs_cid : text };
 type PublicData = record { data : blob };
 type Result = variant { Ok; Err : CError };
-type Result_1 = variant { Ok : Notification; Err : CError };
-type Result_2 = variant { Ok : PrivateData; Err : CError };
-type Result_3 = variant { Ok : PublicData; Err : CError };
+type Result_1 = variant { Ok : vec record { principal; Device }; Err : CError };
+type Result_2 = variant { Ok : Notification; Err : CError };
+type Result_3 = variant { Ok : PrivateData; Err : CError };
+type Result_4 = variant { Ok : PublicData; Err : CError };
 type Visibility = variant { Private; Public };
 service : {
   declare_private_data : (text, text, text) -> (Result);
   declare_public_data : (text, blob) -> (Result);
-  get_notification : (principal, nat64) -> (Result_1) query;
-  get_private_data : (principal, text) -> (Result_2) query;
-  get_public_data : (principal, text) -> (Result_3) query;
-  register_device : (principal) -> (Result);
+  get_devices : () -> (Result_1) query;
+  get_notification : (principal, nat64) -> (Result_2) query;
+  get_private_data : (principal, text) -> (Result_3) query;
+  get_public_data : (principal, text) -> (Result_4) query;
+  register_device : (principal, text) -> (Result);
   revoke_private_data : (text) -> (Result);
   revoke_public_data : (text) -> (Result);
 }

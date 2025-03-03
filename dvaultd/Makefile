@@ -4,10 +4,12 @@ fmt:
 lint: fmt
 	cargo clippy --tests --all-targets --all-features -- -D warnings
 
-run:
+run_owner:
 	cargo run -- run
 
-device_1:
+run_device_1:
 	cargo run -- run \
-		--device-owner-public-key 4ny6d-muect-mutto-ny7jl-eyfuo-6vtb5-wbugl-vaacu-4vugg-jjgag-bae \
-		--secret-key-file secret_key_1.txt
+		--dvault-private-key-file data/dvault_private_key_1.txt \
+		--dvault-public-key-file data/dvault_public_key_1.txt \
+		--sc-owner-public-key o4xvx-uc2km-35uqh-gayve-jttup-lec54-f4isr-ixb7s-ur33j-vqoyx-zqe \
+		--sc-device-private-key-file data/sc_private_key_1.txt \

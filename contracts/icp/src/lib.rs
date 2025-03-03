@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt::Display;
 
 use candid::{CandidType, Decode, Deserialize, Encode, Principal};
@@ -24,6 +24,7 @@ pub const GET_PUBLIC_DATA_METHOD: &str = "get_public_data";
 pub const GET_PRIVATE_DATA_METHOD: &str = "get_private_data";
 pub const GET_NOTIFICATION_METHOD: &str = "get_notification";
 pub const REGISTER_DEVICE_METHOD: &str = "register_device";
+pub const GET_DEVICES_METHOD: &str = "get_devices";
 
 // Canister result.
 pub type CResult<T> = Result<T, CError>;
@@ -96,9 +97,14 @@ pub enum Visibility {
 
 #[derive(CandidType, Deserialize, Default)]
 struct Devices {
-    inner: HashSet<Principal>,
+    inner: HashMap<Principal, Device>,
 }
 impl_storable!(Devices);
+
+#[derive(CandidType, Deserialize, Default)]
+pub struct Device {
+    pub ed25519_public_key: String,
+}
 
 // Use this method if you want to claim that this public data is trusted to the caller.
 // Can be used for notifications and integrity purposes.
@@ -156,26 +162,30 @@ fn get_notification(principal: Principal, index: usize) -> CResult<Notification>
 }
 
 #[ic_cdk::update]
-fn register_device(principal: Principal) -> CResult<()> {
+fn register_device(owner: Principal, public_key: String) -> CResult<()> {
     let caller = ic_cdk::api::caller();
-    DEVICES.with(|inner| {
-        let mut inner = inner.borrow_mut();
-        let devices = inner.get(&principal);
-        match devices {
-            Some(mut devices) => {
-                devices.inner.insert(caller);
-            }
-            None => {
-                inner.insert(
-                    principal,
-                    Devices {
-                        inner: HashSet::from_iter(vec![caller]),
-                    },
-                );
-            }
+    let mut devices: Devices = DEVICES.with(|inner| inner.borrow_mut().get(&owner).unwrap_or_default());
+    match devices.inner.get_mut(&caller) {
+        Some(device) => {
+            device.ed25519_public_key = public_key;
         }
-    });
+        None => {
+            devices.inner.insert(
+                caller,
+                Device {
+                    ed25519_public_key: public_key,
+                },
+            );
+        }
+    };
+    DEVICES.with(|inner| inner.borrow_mut().insert(owner, devices));
     Ok(())
+}
+
+#[ic_cdk::query]
+fn get_devices() -> CResult<HashMap<Principal, Device>> {
+    let caller = ic_cdk::api::caller();
+    Ok(DEVICES.with(|inner| inner.borrow().get(&caller).unwrap_or_default().inner))
 }
 
 fn declare_public_data_(caller: Principal, id: String, data: Vec<u8>) -> CResult<()> {

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::{fs, io};
 
 use candid::Principal;
@@ -5,7 +6,7 @@ use candid::{Decode, Encode};
 use ic_agent::{identity::Secp256k1Identity, Agent};
 use serde::Deserialize;
 
-use crate::map_io_err;
+use crate::{map_io_err, map_io_err_ctx};
 
 #[derive(Deserialize)]
 struct CanisterIds {
@@ -21,33 +22,53 @@ pub(crate) struct Client {
     agent: Agent,
     caller: Principal,
     canister_id: Principal,
-    device_owner: Principal,
 }
 
 impl Client {
-    pub(crate) async fn new(device_owner_public_key: &str, secret_key_file: &str) -> std::io::Result<Client> {
-        let identity = init_identity(secret_key_file)?;
+    pub(crate) async fn new(
+        sc_owner_public_key: Option<String>,
+        dvault_public_key: &String,
+        sc_device_private_key_file: &str,
+    ) -> std::io::Result<Client> {
+        let identity =
+            init_identity(sc_device_private_key_file).map_err(|e| map_io_err_ctx(e, "failed to init identity"))?;
 
-        let agent =
-            Agent::builder().with_url("http://127.0.0.1:7777").with_identity(identity).build().map_err(map_io_err)?;
-        agent.fetch_root_key().await.map_err(map_io_err)?;
-        let caller = agent.get_principal().map_err(map_io_err)?;
+        let agent = Agent::builder()
+            .with_url("http://127.0.0.1:7777")
+            .with_identity(identity)
+            .build()
+            .map_err(|e| map_io_err_ctx(e, "failed to init agent"))?;
+        agent.fetch_root_key().await.map_err(|e| map_io_err_ctx(e, "failed to fetch root key"))?;
+        let caller = agent.get_principal().map_err(|e| map_io_err_ctx(e, "failed to get agent principal"))?;
         eprintln!("Using identity: {:?}", caller.to_text());
 
         let canisters_ids: CanisterIds =
             serde_json::from_str(&std::fs::read_to_string("../contracts/icp/.dfx/local/canister_ids.json")?)?;
         let canister_id = Principal::from_text(canisters_ids.dvault.local).map_err(map_io_err)?;
 
-        let device_owner = Principal::from_text(device_owner_public_key).map_err(map_io_err)?;
-
         let client = Client {
             agent,
             caller,
             canister_id,
-            device_owner,
         };
-        client.register_device().await?;
 
+        if let Some(sc_owner_public_key) = sc_owner_public_key {
+            let sc_owner_public_key = Principal::from_text(sc_owner_public_key).map_err(map_io_err)?;
+            client.register_device(sc_owner_public_key, dvault_public_key).await?;
+            eprintln!("Device successfully registered");
+        } else {
+            // So it is an owner. Let's see their registered devices.
+            let devices = client.get_devices().await?;
+            if devices.len() == 0 {
+                eprintln!("There are no registered devices")
+            } else {
+                for (pk, device) in devices.iter() {
+                    eprintln!("Registered device: {} {}", pk, device.ed25519_public_key)
+                }
+            }
+        }
+
+        eprintln!("ICP client successfully initialized");
         Ok(client)
     }
 
@@ -66,17 +87,31 @@ impl Client {
         Ok(())
     }
 
-    async fn register_device(&self) -> std::io::Result<()> {
+    pub(crate) async fn get_devices(&self) -> std::io::Result<HashMap<Principal, dvault::Device>> {
+        let res = self
+            .agent
+            .query(&self.canister_id, dvault::GET_DEVICES_METHOD)
+            .with_effective_canister_id(self.canister_id)
+            .with_arg(Encode!().map_err(map_io_err)?)
+            .call()
+            .await
+            .map_err(map_io_err)?;
+        let res = Decode!(res.as_slice(), dvault::CResult<HashMap<Principal, dvault::Device>>)
+            .map_err(map_io_err)?
+            .map_err(map_io_err)?;
+        Ok(res)
+    }
+
+    async fn register_device(&self, sc_owner_public_key: Principal, dvault_public_key: &String) -> std::io::Result<()> {
         let res = self
             .agent
             .update(&self.canister_id, dvault::REGISTER_DEVICE_METHOD)
             .with_effective_canister_id(self.canister_id)
-            .with_arg(Encode!(&self.caller, &self.device_owner).map_err(map_io_err)?)
+            .with_arg(Encode!(&sc_owner_public_key, dvault_public_key).map_err(map_io_err)?)
             .call_and_wait()
             .await
             .map_err(map_io_err)?;
         Decode!(res.as_slice(), dvault::CResult<()>).map_err(map_io_err)?.map_err(map_io_err)?;
-        eprintln!("Device successfully registered");
         Ok(())
     }
 }
