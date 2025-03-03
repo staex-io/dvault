@@ -3,8 +3,8 @@ use core::panic;
 use candid::{Decode, Encode, Principal};
 use dvault::{
     Action, CError, PrivateData, PublicData, Visibility, DECLARE_PRIVATE_DATA_METHOD, DECLARE_PUBLIC_DATA_METHOD,
-    GET_NOTIFICATION_METHOD, GET_PRIVATE_DATA_METHOD, GET_PUBLIC_DATA_METHOD, REVOKE_PRIVATE_DATA_METHOD,
-    REVOKE_PUBLIC_DATA_METHOD,
+    GET_LAST_NOTIFICATION_METHOD, GET_PRIVATE_DATA_METHOD, GET_PUBLIC_DATA_METHOD, READ_LAST_NOTIFICATION_METHOD,
+    REVOKE_PRIVATE_DATA_METHOD, REVOKE_PUBLIC_DATA_METHOD,
 };
 use ic_agent::Agent;
 
@@ -34,13 +34,13 @@ async fn test_all_public_data() {
     let res = agent
         .update(&canister_id, DECLARE_PUBLIC_DATA_METHOD)
         .with_effective_canister_id(canister_id)
-        .with_arg(Encode!(&id, &expected).unwrap())
+        .with_arg(Encode!(&caller, &id, &expected).unwrap())
         .call_and_wait()
         .await
         .unwrap();
     Decode!(res.as_slice(), dvault::CResult<()>).unwrap().unwrap();
 
-    test_notifications_1(&agent, canister_id, caller, Visibility::Public, id.clone()).await;
+    test_notifications_1(&agent, canister_id, Visibility::Public, id.clone()).await;
 
     let res = agent
         .query(&canister_id, GET_PUBLIC_DATA_METHOD)
@@ -55,7 +55,7 @@ async fn test_all_public_data() {
     let res = agent
         .update(&canister_id, REVOKE_PUBLIC_DATA_METHOD)
         .with_effective_canister_id(canister_id)
-        .with_arg(Encode!(&id).unwrap())
+        .with_arg(Encode!(&caller, &id).unwrap())
         .call_and_wait()
         .await
         .unwrap();
@@ -73,7 +73,7 @@ async fn test_all_public_data() {
         assert_eq!(CError::NotFound, err);
     }
 
-    test_notifications_2(&agent, canister_id, caller, Visibility::Public, id).await;
+    test_notifications_2(&agent, canister_id, Visibility::Public, id).await;
 }
 
 #[tokio::test]
@@ -99,13 +99,13 @@ async fn test_all_private_data() {
     let res = agent
         .update(&canister_id, DECLARE_PRIVATE_DATA_METHOD)
         .with_effective_canister_id(canister_id)
-        .with_arg(Encode!(&id, &hash, &ipfs_cid).unwrap())
+        .with_arg(Encode!(&caller, &id, &hash, &ipfs_cid).unwrap())
         .call_and_wait()
         .await
         .unwrap();
     Decode!(res.as_slice(), dvault::CResult<()>).unwrap().unwrap();
 
-    test_notifications_1(&agent, canister_id, caller, Visibility::Private, id.clone()).await;
+    test_notifications_1(&agent, canister_id, Visibility::Private, id.clone()).await;
 
     let res = agent
         .query(&canister_id, GET_PRIVATE_DATA_METHOD)
@@ -121,7 +121,7 @@ async fn test_all_private_data() {
     let res = agent
         .update(&canister_id, REVOKE_PRIVATE_DATA_METHOD)
         .with_effective_canister_id(canister_id)
-        .with_arg(Encode!(&id).unwrap())
+        .with_arg(Encode!(&caller, &id).unwrap())
         .call_and_wait()
         .await
         .unwrap();
@@ -139,17 +139,11 @@ async fn test_all_private_data() {
         assert_eq!(CError::NotFound, err);
     }
 
-    test_notifications_2(&agent, canister_id, caller, Visibility::Private, id).await;
+    test_notifications_2(&agent, canister_id, Visibility::Private, id).await;
 }
 
-async fn test_notifications_1(
-    agent: &Agent,
-    canister_id: Principal,
-    caller: Principal,
-    visibility: Visibility,
-    id: String,
-) {
-    let notification = get_notification(agent, canister_id, caller, 0).await.unwrap();
+async fn test_notifications_1(agent: &Agent, canister_id: Principal, visibility: Visibility, id: String) {
+    let notification = get_last_notification(agent, canister_id).await.unwrap();
     if notification.action != Action::Declared {
         panic!("incorrect action")
     }
@@ -157,29 +151,16 @@ async fn test_notifications_1(
         panic!("incorrect visibility")
     }
     assert_eq!(id, notification.id);
-    if let Err(err) = get_notification(agent, canister_id, caller, 1).await {
+    read_last_notification(agent, canister_id).await.unwrap();
+    if let Err(err) = get_last_notification(agent, canister_id).await {
         assert_eq!(CError::NotFound, err);
         return;
     }
     panic!("should be an error")
 }
 
-async fn test_notifications_2(
-    agent: &Agent,
-    canister_id: Principal,
-    caller: Principal,
-    visibility: Visibility,
-    id: String,
-) {
-    let notification = get_notification(agent, canister_id, caller, 0).await.unwrap();
-    if notification.action != Action::Declared {
-        panic!("incorrect action")
-    }
-    if notification.visibility != visibility {
-        panic!("incorrect visibility")
-    }
-    assert_eq!(id, notification.id);
-    let notification = get_notification(agent, canister_id, caller, 1).await.unwrap();
+async fn test_notifications_2(agent: &Agent, canister_id: Principal, visibility: Visibility, id: String) {
+    let notification = get_last_notification(agent, canister_id).await.unwrap();
     if notification.action != Action::Revoked {
         panic!("incorrect action")
     }
@@ -187,25 +168,32 @@ async fn test_notifications_2(
         panic!("incorrect visibility")
     }
     assert_eq!(id, notification.id);
-    if let Err(err) = get_notification(agent, canister_id, caller, 2).await {
+    read_last_notification(agent, canister_id).await.unwrap();
+    if let Err(err) = get_last_notification(agent, canister_id).await {
         assert_eq!(CError::NotFound, err);
         return;
     }
     panic!("should be an error")
 }
 
-async fn get_notification(
-    agent: &Agent,
-    canister_id: Principal,
-    caller: Principal,
-    index: usize,
-) -> dvault::CResult<dvault::Notification> {
+async fn get_last_notification(agent: &Agent, canister_id: Principal) -> dvault::CResult<dvault::Notification> {
     let res = agent
-        .query(&canister_id, GET_NOTIFICATION_METHOD)
+        .query(&canister_id, GET_LAST_NOTIFICATION_METHOD)
         .with_effective_canister_id(canister_id)
-        .with_arg(Encode!(&caller, &index).unwrap())
+        .with_arg(Encode!().unwrap())
         .call()
         .await
         .unwrap();
     Decode!(res.as_slice(), dvault::CResult<dvault::Notification>).unwrap()
+}
+
+async fn read_last_notification(agent: &Agent, canister_id: Principal) -> dvault::CResult<()> {
+    let res = agent
+        .update(&canister_id, READ_LAST_NOTIFICATION_METHOD)
+        .with_effective_canister_id(canister_id)
+        .with_arg(Encode!().unwrap())
+        .call_and_wait()
+        .await
+        .unwrap();
+    Decode!(res.as_slice(), dvault::CResult<()>).unwrap()
 }

@@ -1,11 +1,4 @@
-use std::{
-    fs, io,
-    str::from_utf8,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-};
+use std::{fs, io, str::from_utf8, time::Duration};
 
 use base64::{engine::general_purpose::STANDARD as B64_STANDARD, Engine};
 use clap::{Parser, Subcommand};
@@ -65,14 +58,14 @@ async fn main() -> std::io::Result<()> {
     let ipfs_client = ipfs::Client::new();
 
     match cli.command {
-        Commands::Run {} => {
-            let term = Arc::new(AtomicBool::new(false));
-            signal_hook::flag::register(signal_hook::consts::SIGTERM, Arc::clone(&term))?;
-            signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&term))?;
-            signal_hook::flag::register(signal_hook::consts::SIGQUIT, Arc::clone(&term))?;
-            while !term.load(Ordering::Relaxed) {}
-            eprintln!("\nReceived os signal to shutdown")
-        }
+        Commands::Run {} => loop {
+            let notification = icp_client.get_last_notification().await?;
+            if let Some(n) = notification {
+                eprintln!("There is new notification with id: {}", n.id);
+                icp_client.read_last_notification().await?;
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        },
         Commands::Broadcast { data } => {
             let devices = icp_client.get_devices().await?;
             for device in devices {
@@ -90,9 +83,9 @@ async fn main() -> std::io::Result<()> {
                 let mut hash_b64 = String::new();
                 B64_STANDARD.encode_string(hash, &mut hash_b64);
 
-                icp_client.declare_private_data(id, hash_b64, ipfs_cid).await?;
+                icp_client.declare_private_data(device.0, &id, hash_b64, ipfs_cid).await?;
 
-                eprintln!("Successfully broadcast private data to: {}", device.0);
+                eprintln!("Successfully broadcast private data to: {}: {}", device.0, id);
             }
         }
     }

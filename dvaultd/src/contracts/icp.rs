@@ -72,12 +72,49 @@ impl Client {
         Ok(client)
     }
 
-    pub(crate) async fn declare_private_data(&self, id: String, hash: String, ipfs_cid: String) -> std::io::Result<()> {
+    pub(crate) async fn declare_private_data(
+        &self,
+        device: Principal,
+        id: &String,
+        hash: String,
+        ipfs_cid: String,
+    ) -> std::io::Result<()> {
         let res = self
             .agent
             .update(&self.canister_id, dvault::DECLARE_PRIVATE_DATA_METHOD)
             .with_effective_canister_id(self.canister_id)
-            .with_arg(Encode!(&id, &hash, &ipfs_cid).map_err(map_io_err)?)
+            .with_arg(Encode!(&device, id, &hash, &ipfs_cid).map_err(map_io_err)?)
+            .call_and_wait()
+            .await
+            .map_err(map_io_err)?;
+        Decode!(res.as_slice(), dvault::CResult<()>).map_err(map_io_err)?.map_err(map_io_err)
+    }
+
+    pub(crate) async fn get_last_notification(&self) -> std::io::Result<Option<dvault::Notification>> {
+        let res = self
+            .agent
+            .query(&self.canister_id, dvault::GET_LAST_NOTIFICATION_METHOD)
+            .with_effective_canister_id(self.canister_id)
+            .with_arg(Encode!().map_err(map_io_err)?)
+            .call()
+            .await
+            .map_err(map_io_err)?;
+        let res = Decode!(res.as_slice(), dvault::CResult<dvault::Notification>).map_err(map_io_err)?;
+        match res {
+            Ok(n) => Ok(Some(n)),
+            Err(e) => match e {
+                dvault::CError::NotFound => Ok(None),
+                e => Err(map_io_err(e)),
+            },
+        }
+    }
+
+    pub(crate) async fn read_last_notification(&self) -> std::io::Result<()> {
+        let res = self
+            .agent
+            .update(&self.canister_id, dvault::READ_LAST_NOTIFICATION_METHOD)
+            .with_effective_canister_id(self.canister_id)
+            .with_arg(Encode!().map_err(map_io_err)?)
             .call_and_wait()
             .await
             .map_err(map_io_err)?;
