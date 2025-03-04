@@ -19,8 +19,8 @@ service : {
   declare_public_data : (principal, text, blob) -> (Result);
   get_devices : () -> (Result_1) query;
   get_last_notification : () -> (Result_2) query;
-  get_private_data : (principal, text) -> (Result_3) query;
-  get_public_data : (principal, text) -> (Result_4) query;
+  get_private_data : (text) -> (Result_3) query;
+  get_public_data : (text) -> (Result_4) query;
   read_last_notification : () -> (Result);
   register_device : (principal, text) -> (Result);
   revoke_private_data : (principal, text) -> (Result);

@@ -20,7 +20,7 @@ async fn test_all_public_data() {
     let res = agent
         .query(&canister_id, GET_PUBLIC_DATA_METHOD)
         .with_effective_canister_id(canister_id)
-        .with_arg(Encode!(&caller, &"asd_dsa".to_string()).unwrap())
+        .with_arg(Encode!(&"asd_dsa".to_string()).unwrap())
         .call()
         .await
         .unwrap();
@@ -45,7 +45,7 @@ async fn test_all_public_data() {
     let res = agent
         .query(&canister_id, GET_PUBLIC_DATA_METHOD)
         .with_effective_canister_id(canister_id)
-        .with_arg(Encode!(&caller, &id).unwrap())
+        .with_arg(Encode!(&id).unwrap())
         .call()
         .await
         .unwrap();
@@ -64,7 +64,7 @@ async fn test_all_public_data() {
     let res = agent
         .query(&canister_id, GET_PUBLIC_DATA_METHOD)
         .with_effective_canister_id(canister_id)
-        .with_arg(Encode!(&caller, &id).unwrap())
+        .with_arg(Encode!(&id).unwrap())
         .call()
         .await
         .unwrap();
@@ -84,7 +84,7 @@ async fn test_all_private_data() {
     let res = agent
         .query(&canister_id, GET_PRIVATE_DATA_METHOD)
         .with_effective_canister_id(canister_id)
-        .with_arg(Encode!(&caller, &"asd_dsa".to_string()).unwrap())
+        .with_arg(Encode!(&"asd_dsa".to_string()).unwrap())
         .call()
         .await
         .unwrap();
@@ -110,7 +110,7 @@ async fn test_all_private_data() {
     let res = agent
         .query(&canister_id, GET_PRIVATE_DATA_METHOD)
         .with_effective_canister_id(canister_id)
-        .with_arg(Encode!(&caller, &id).unwrap())
+        .with_arg(Encode!(&id).unwrap())
         .call()
         .await
         .unwrap();
@@ -130,7 +130,7 @@ async fn test_all_private_data() {
     let res = agent
         .query(&canister_id, GET_PRIVATE_DATA_METHOD)
         .with_effective_canister_id(canister_id)
-        .with_arg(Encode!(&caller, &id).unwrap())
+        .with_arg(Encode!(&id).unwrap())
         .call()
         .await
         .unwrap();

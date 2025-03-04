@@ -6,6 +6,7 @@ use candid::{Decode, Encode};
 use ic_agent::{identity::Secp256k1Identity, Agent};
 use serde::Deserialize;
 
+use crate::contracts::PrivateData;
 use crate::{map_io_err, map_io_err_ctx};
 
 #[derive(Deserialize)]
@@ -20,7 +21,6 @@ struct CanisterId {
 
 pub(crate) struct Client {
     agent: Agent,
-    caller: Principal,
     canister_id: Principal,
 }
 
@@ -46,11 +46,7 @@ impl Client {
             serde_json::from_str(&std::fs::read_to_string("../contracts/icp/.dfx/local/canister_ids.json")?)?;
         let canister_id = Principal::from_text(canisters_ids.dvault.local).map_err(map_io_err)?;
 
-        let client = Client {
-            agent,
-            caller,
-            canister_id,
-        };
+        let client = Client { agent, canister_id };
 
         if let Some(sc_owner_public_key) = sc_owner_public_key {
             let sc_owner_public_key = Principal::from_text(sc_owner_public_key).map_err(map_io_err)?;
@@ -121,19 +117,18 @@ impl Client {
         Decode!(res.as_slice(), dvault::CResult<()>).map_err(map_io_err)?.map_err(map_io_err)
     }
 
-    pub(crate) async fn get_private_data(&self) -> std::io::Result<()> {
+    pub(crate) async fn get_private_data(&self, id: &String) -> std::io::Result<PrivateData> {
         let res = self
             .agent
             .query(&self.canister_id, dvault::GET_PRIVATE_DATA_METHOD)
             .with_effective_canister_id(self.canister_id)
-            .with_arg(Encode!(&self.caller, &"asd_dsa".to_string()).map_err(map_io_err)?)
+            .with_arg(Encode!(id).map_err(map_io_err)?)
             .call()
             .await
             .map_err(map_io_err)?;
         let res =
             Decode!(res.as_slice(), dvault::CResult<dvault::PrivateData>).map_err(map_io_err)?.map_err(map_io_err)?;
-        eprintln!("Result: {:?} {:?}", res.hash, res.ipfs_cid);
-        Ok(())
+        Ok(res.into())
     }
 
     pub(crate) async fn get_devices(&self) -> std::io::Result<HashMap<Principal, dvault::Device>> {

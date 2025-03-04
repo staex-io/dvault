@@ -112,15 +112,13 @@ pub struct Device {
 // Also IPFS can be avoided to download data.
 #[ic_cdk::update]
 fn declare_public_data(device: Principal, id: String, data: Vec<u8>) -> CResult<()> {
-    let caller = ic_cdk::api::caller();
-    declare_public_data_(caller, device, id, data)
+    declare_public_data_(device, id, data)
 }
 
 // Declare private encrypted data which can be downloaded through IPFS.
 #[ic_cdk::update]
 fn declare_private_data(device: Principal, id: String, hash: String, ipfs_cid: String) -> CResult<()> {
-    let caller = ic_cdk::api::caller();
-    declare_private_data_(caller, device, id, hash, ipfs_cid)
+    declare_private_data_(device, id, hash, ipfs_cid)
 }
 
 // Revoke public data.
@@ -139,16 +137,16 @@ fn revoke_private_data(device: Principal, id: String) -> CResult<()> {
 
 // Get on-chain public data.
 #[ic_cdk::query]
-fn get_public_data(principal: Principal, id: String) -> CResult<PublicData> {
-    let principal_data = PRINCIPAL_DATA.with(|inner| inner.borrow().get(&principal).unwrap_or_default());
-    Ok(principal_data.public_data.get(&id).ok_or(CError::NotFound)?.clone())
+fn get_public_data(id: String) -> CResult<PublicData> {
+    let caller = ic_cdk::api::caller();
+    get_public_data_(caller, id)
 }
 
 // Get on-chain private data.
 #[ic_cdk::query]
-fn get_private_data(principal: Principal, id: String) -> CResult<PrivateData> {
-    let principal_data = PRINCIPAL_DATA.with(|inner| inner.borrow().get(&principal).unwrap_or_default());
-    Ok(principal_data.private_data.get(&id).ok_or(CError::NotFound)?.clone())
+fn get_private_data(id: String) -> CResult<PrivateData> {
+    let caller = ic_cdk::api::caller();
+    get_private_data_(caller, id)
 }
 
 // Get on-chain notification.
@@ -191,6 +189,16 @@ fn get_devices() -> CResult<HashMap<Principal, Device>> {
     Ok(DEVICES.with(|inner| inner.borrow().get(&caller).unwrap_or_default().inner))
 }
 
+fn get_public_data_(principal: Principal, id: String) -> CResult<PublicData> {
+    let principal_data = PRINCIPAL_DATA.with(|inner| inner.borrow().get(&principal).unwrap_or_default());
+    Ok(principal_data.public_data.get(&id).ok_or(CError::NotFound)?.clone())
+}
+
+fn get_private_data_(principal: Principal, id: String) -> CResult<PrivateData> {
+    let principal_data = PRINCIPAL_DATA.with(|inner| inner.borrow().get(&principal).unwrap_or_default());
+    Ok(principal_data.private_data.get(&id).ok_or(CError::NotFound)?.clone())
+}
+
 fn get_last_notification_(caller: Principal) -> CResult<Notification> {
     Ok(NOTIFICATIONS
         .with(|inner| inner.borrow().get(&caller).ok_or(CError::NotFound))?
@@ -203,31 +211,27 @@ fn get_last_notification_(caller: Principal) -> CResult<Notification> {
 fn read_last_notification_(caller: Principal) -> CResult<()> {
     NOTIFICATIONS.with(|inner| {
         let mut ns = inner.borrow_mut().get(&caller).ok_or(CError::NotFound)?;
-        ns.inner.remove(0);
-        inner.borrow_mut().insert(caller, ns);
+        if !ns.inner.is_empty() {
+            ns.inner.remove(0);
+            inner.borrow_mut().insert(caller, ns);
+        }
         Ok(())
     })?;
     Ok(())
 }
 
-fn declare_public_data_(caller: Principal, device: Principal, id: String, data: Vec<u8>) -> CResult<()> {
-    let mut principal_data = PRINCIPAL_DATA.with(|inner| inner.borrow().get(&caller).unwrap_or_default());
+fn declare_public_data_(device: Principal, id: String, data: Vec<u8>) -> CResult<()> {
+    let mut principal_data = PRINCIPAL_DATA.with(|inner| inner.borrow().get(&device).unwrap_or_default());
     principal_data.public_data.insert(id.clone(), PublicData { data });
-    PRINCIPAL_DATA.with(|inner| inner.borrow_mut().insert(caller, principal_data));
+    PRINCIPAL_DATA.with(|inner| inner.borrow_mut().insert(device, principal_data));
     add_notification(device, Action::Declared, Visibility::Public, id)?;
     Ok(())
 }
 
-fn declare_private_data_(
-    caller: Principal,
-    device: Principal,
-    id: String,
-    hash: String,
-    ipfs_cid: String,
-) -> CResult<()> {
-    let mut principal_data = PRINCIPAL_DATA.with(|inner| inner.borrow().get(&caller).unwrap_or_default());
+fn declare_private_data_(device: Principal, id: String, hash: String, ipfs_cid: String) -> CResult<()> {
+    let mut principal_data = PRINCIPAL_DATA.with(|inner| inner.borrow().get(&device).unwrap_or_default());
     principal_data.private_data.insert(id.clone(), PrivateData { hash, ipfs_cid });
-    PRINCIPAL_DATA.with(|inner| inner.borrow_mut().insert(caller, principal_data));
+    PRINCIPAL_DATA.with(|inner| inner.borrow_mut().insert(device, principal_data));
     add_notification(device, Action::Declared, Visibility::Private, id)?;
     Ok(())
 }
@@ -282,7 +286,7 @@ mod tests {
     use candid::Principal;
 
     use crate::{
-        declare_private_data_, declare_public_data_, get_last_notification_, get_private_data, get_public_data,
+        declare_private_data_, declare_public_data_, get_last_notification_, get_private_data_, get_public_data_,
         read_last_notification_, revoke_private_data_, revoke_public_data_, Action, CError, Visibility,
     };
 
@@ -290,20 +294,20 @@ mod tests {
     fn unit_test_public() {
         let caller = Principal::anonymous();
 
-        let err = get_public_data(caller, "asd_dsa".to_string()).unwrap_err();
+        let err = get_public_data_(caller, "asd_dsa".to_string()).unwrap_err();
         assert_eq!(CError::NotFound, err);
 
         let id = "asd_123".to_string();
         let expected = vec![0, 1, 2];
-        declare_public_data_(caller, caller, id.clone(), expected.clone()).unwrap();
+        declare_public_data_(caller, id.clone(), expected.clone()).unwrap();
 
         test_notifications_1(caller, Visibility::Public, id.clone());
 
-        let public_data = get_public_data(caller, id.clone()).unwrap();
+        let public_data = get_public_data_(caller, id.clone()).unwrap();
         assert_eq!(expected, public_data.data);
 
         revoke_public_data_(caller, caller, id.clone()).unwrap();
-        let err = get_public_data(caller, id.clone()).unwrap_err();
+        let err = get_public_data_(caller, id.clone()).unwrap_err();
         assert_eq!(CError::NotFound, err);
 
         test_notifications_2(caller, Visibility::Public, id);
@@ -313,22 +317,22 @@ mod tests {
     fn unit_test_private() {
         let caller = Principal::anonymous();
 
-        let err = get_private_data(caller, "asd_dsa".to_string()).unwrap_err();
+        let err = get_private_data_(caller, "asd_dsa".to_string()).unwrap_err();
         assert_eq!(CError::NotFound, err);
 
         let id = "dsa_456".to_string();
         let hash = "asd".to_string();
         let ipfs_cid = "dsa".to_string();
-        declare_private_data_(caller, caller, id.clone(), hash.clone(), ipfs_cid.clone()).unwrap();
+        declare_private_data_(caller, id.clone(), hash.clone(), ipfs_cid.clone()).unwrap();
 
         test_notifications_1(caller, Visibility::Private, id.clone());
 
-        let private_data = get_private_data(caller, id.clone()).unwrap();
+        let private_data = get_private_data_(caller, id.clone()).unwrap();
         assert_eq!(hash, private_data.hash);
         assert_eq!(ipfs_cid, private_data.ipfs_cid);
 
         revoke_private_data_(caller, caller, id.clone()).unwrap();
-        let err = get_private_data(caller, id.clone()).unwrap_err();
+        let err = get_private_data_(caller, id.clone()).unwrap_err();
         assert_eq!(CError::NotFound, err);
 
         test_notifications_2(caller, Visibility::Private, id);
