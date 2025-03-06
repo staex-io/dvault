@@ -137,10 +137,26 @@ async fn run(icp_client: &icp::Client, ipfs_client: &ipfs::Client, cipher: &cryp
     let notification = icp_client.get_last_notification().await?;
     if let Some(n) = notification {
         eprintln!("There is new notification with id: {}", n.id);
+
         let private_data = icp_client.get_private_data(&n.id).await?;
+        let mut onchain_hash = Vec::new();
+        B64_STANDARD
+            .decode_vec(private_data.hash.as_bytes(), &mut onchain_hash)
+            .map_err(|e| map_io_err_ctx(e, "failed to decode onchain hash"))?;
+
         let data = ipfs_client.get_data(&private_data.ipfs_cid).await?;
         let plaintext = cipher.decrypt(&data, data.len())?;
-        eprintln!("Received private plaintext from notification: {:?}", from_utf8(&plaintext));
+        let hash = Sha256::digest(&plaintext).to_vec();
+
+        if hash.ne(&onchain_hash) {
+            eprintln!(
+                "Received private plaintext from notification, but hashes are not equal: {:?}",
+                from_utf8(&plaintext)
+            );
+        } else {
+            eprintln!("Received private plaintext from notification: {:?}", from_utf8(&plaintext));
+        }
+
         icp_client.read_last_notification().await?;
     }
     Ok(())
