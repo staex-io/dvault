@@ -127,9 +127,12 @@ fn revoke_public_data(id: String) -> CResult<()> {
     let caller = ic_cdk::api::caller();
     let devices = DEVICES.with(|inner| inner.borrow().get(&caller).ok_or(CError::NotFound))?;
     for device in devices.inner {
-        if  PRINCIPAL_DATA.with(|pd_inner| -> Option<PublicData> {
-            return pd_inner.borrow().get(&device.0).and_then(|v| v.public_data.get(&id).cloned());
-        }).is_some() {
+        if PRINCIPAL_DATA
+            .with(|pd_inner| -> Option<PublicData> {
+                return pd_inner.borrow().get(&device.0).and_then(|v| v.public_data.get(&id).cloned());
+            })
+            .is_some()
+        {
             return revoke_public_data_(device.0, id);
         }
     }
@@ -341,7 +344,7 @@ mod tests {
     fn unit_test_public() {
         let caller = Principal::anonymous();
 
-        let err = get_public_data_(caller, "asd_dsa".to_string()).unwrap_err();
+        let err = get_public_data_(caller, &"asd_dsa".to_string()).unwrap_err();
         assert_eq!(CError::NotFound, err);
 
         let id = "asd_123".to_string();
@@ -350,11 +353,11 @@ mod tests {
 
         test_notifications_1(caller, Visibility::Public, id.clone());
 
-        let public_data = get_public_data_(caller, id.clone()).unwrap();
+        let public_data = get_public_data_(caller, &id.clone()).unwrap();
         assert_eq!(expected, public_data.data);
 
         revoke_public_data_(caller, id.clone()).unwrap();
-        let err = get_public_data_(caller, id.clone()).unwrap_err();
+        let err = get_public_data_(caller, &id.clone()).unwrap_err();
         assert_eq!(CError::NotFound, err);
 
         test_notifications_2(caller, Visibility::Public, id);
@@ -364,7 +367,7 @@ mod tests {
     fn unit_test_private() {
         let caller = Principal::anonymous();
 
-        let err = get_private_data_(caller, "asd_dsa".to_string()).unwrap_err();
+        let err = get_private_data_(caller, &"asd_dsa".to_string()).unwrap_err();
         assert_eq!(CError::NotFound, err);
 
         let id = "dsa_456".to_string();
@@ -374,12 +377,12 @@ mod tests {
 
         test_notifications_1(caller, Visibility::Private, id.clone());
 
-        let private_data = get_private_data_(caller, id.clone()).unwrap();
+        let private_data = get_private_data_(caller, &id.clone()).unwrap();
         assert_eq!(hash, private_data.hash);
         assert_eq!(ipfs_cid, private_data.ipfs_cid);
 
         revoke_private_data_(caller, id.clone()).unwrap();
-        let err = get_private_data_(caller, id.clone()).unwrap_err();
+        let err = get_private_data_(caller, &id.clone()).unwrap_err();
         assert_eq!(CError::NotFound, err);
 
         test_notifications_2(caller, Visibility::Private, id);
