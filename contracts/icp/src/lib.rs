@@ -104,6 +104,7 @@ impl_storable!(Devices);
 
 #[derive(CandidType, Deserialize, Default)]
 pub struct Device {
+    pub tag: String,
     pub ed25519_public_key: String,
 }
 
@@ -213,17 +214,19 @@ fn read_last_notification() -> CResult<()> {
 }
 
 #[ic_cdk::update]
-fn register_device(owner: Principal, public_key: String) -> CResult<()> {
+fn register_device(owner: Principal, tag: String, public_key: String) -> CResult<()> {
     let caller = ic_cdk::api::caller();
     let mut devices: Devices = DEVICES.with(|inner| inner.borrow_mut().get(&owner).unwrap_or_default());
     match devices.inner.get_mut(&caller) {
         Some(device) => {
+            device.tag = tag;
             device.ed25519_public_key = public_key;
         }
         None => {
             devices.inner.insert(
                 caller,
                 Device {
+                    tag,
                     ed25519_public_key: public_key,
                 },
             );
@@ -234,9 +237,15 @@ fn register_device(owner: Principal, public_key: String) -> CResult<()> {
 }
 
 #[ic_cdk::query]
-fn get_devices() -> CResult<HashMap<Principal, Device>> {
+fn get_devices(tag: Option<String>) -> CResult<HashMap<Principal, Device>> {
     let caller = ic_cdk::api::caller();
-    Ok(DEVICES.with(|inner| inner.borrow().get(&caller).unwrap_or_default().inner))
+    let devices = DEVICES.with(|inner| inner.borrow().get(&caller).unwrap_or_default().inner);
+    let devices: HashMap<Principal, Device> = if let Some(tag) = tag {
+        devices.into_iter().filter_map(|v| (v.1.tag == tag).then_some(v)).map(|v| (v.0, v.1)).collect()
+    } else {
+        devices
+    };
+    Ok(devices)
 }
 
 fn get_public_data_(principal: Principal, id: &String) -> CResult<PublicData> {

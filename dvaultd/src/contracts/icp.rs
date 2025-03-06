@@ -27,6 +27,7 @@ pub(crate) struct Client {
 impl Client {
     pub(crate) async fn new(
         sc_owner_public_key: Option<String>,
+        tag: String,
         dvault_public_key: &String,
         sc_device_private_key_file: &str,
     ) -> std::io::Result<Client> {
@@ -50,11 +51,11 @@ impl Client {
 
         if let Some(sc_owner_public_key) = sc_owner_public_key {
             let sc_owner_public_key = Principal::from_text(sc_owner_public_key).map_err(map_io_err)?;
-            client.register_device(sc_owner_public_key, dvault_public_key).await?;
+            client.register_device(sc_owner_public_key, tag, dvault_public_key).await?;
             eprintln!("Device successfully registered");
         } else {
             // So it is an owner. Let's see their registered devices.
-            let devices = client.get_devices().await?;
+            let devices = client.get_devices(None).await?;
             if devices.is_empty() {
                 eprintln!("There are no registered devices")
             } else {
@@ -131,12 +132,12 @@ impl Client {
         Ok(res.into())
     }
 
-    pub(crate) async fn get_devices(&self) -> std::io::Result<HashMap<Principal, dvault::Device>> {
+    pub(crate) async fn get_devices(&self, tag: Option<String>) -> std::io::Result<HashMap<Principal, dvault::Device>> {
         let res = self
             .agent
             .query(&self.canister_id, dvault::GET_DEVICES_METHOD)
             .with_effective_canister_id(self.canister_id)
-            .with_arg(Encode!().map_err(map_io_err)?)
+            .with_arg(Encode!(&tag).map_err(map_io_err)?)
             .call()
             .await
             .map_err(map_io_err)?;
@@ -158,12 +159,17 @@ impl Client {
         Decode!(res.as_slice(), dvault::CResult<()>).map_err(map_io_err)?.map_err(map_io_err)
     }
 
-    async fn register_device(&self, sc_owner_public_key: Principal, dvault_public_key: &String) -> std::io::Result<()> {
+    async fn register_device(
+        &self,
+        sc_owner_public_key: Principal,
+        tag: String,
+        dvault_public_key: &String,
+    ) -> std::io::Result<()> {
         let res = self
             .agent
             .update(&self.canister_id, dvault::REGISTER_DEVICE_METHOD)
             .with_effective_canister_id(self.canister_id)
-            .with_arg(Encode!(&sc_owner_public_key, dvault_public_key).map_err(map_io_err)?)
+            .with_arg(Encode!(&sc_owner_public_key, &tag, dvault_public_key).map_err(map_io_err)?)
             .call_and_wait()
             .await
             .map_err(map_io_err)?;

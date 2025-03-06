@@ -33,6 +33,9 @@ struct Cli {
     #[arg(long)]
     #[arg(default_value = "data/sc_private_key.txt")]
     sc_device_private_key_file: String,
+    /// Set up device tag.
+    #[arg(long)]
+    tag: Option<String>,
     #[clap(subcommand)]
     command: Commands,
 }
@@ -58,14 +61,21 @@ async fn main() -> std::io::Result<()> {
     let dvault_owner_public_key = cli.dvault_owner_public_key;
     let sc_owner_public_key = cli.sc_owner_public_key;
     let sc_device_private_key_file = cli.sc_device_private_key_file;
+    let tag = cli.tag;
 
     let (dvault_private_key, dvault_public_key) = prepare_keys(dvault_private_key_file, dvault_public_key_file)?;
-    let icp_client = icp::Client::new(sc_owner_public_key, &dvault_public_key, &sc_device_private_key_file).await?;
+    let icp_client = icp::Client::new(
+        sc_owner_public_key,
+        tag.clone().unwrap_or_default(),
+        &dvault_public_key,
+        &sc_device_private_key_file,
+    )
+    .await?;
     let ipfs_client = ipfs::Client::new();
 
     match cli.command {
         Commands::Run {} => run(&icp_client, &ipfs_client, dvault_owner_public_key, dvault_private_key).await?,
-        Commands::Broadcast { data } => broadcast(&icp_client, &ipfs_client, data, dvault_private_key).await?,
+        Commands::Broadcast { data } => broadcast(&icp_client, &ipfs_client, data, dvault_private_key, tag).await?,
         Commands::Revoke { id } => revoke(&icp_client, &ipfs_client, id).await?,
     }
     Ok(())
@@ -135,8 +145,9 @@ async fn broadcast(
     ipfs_client: &ipfs::Client,
     data: String,
     dvault_private_key: String,
+    tag: Option<String>,
 ) -> std::io::Result<()> {
-    let devices = icp_client.get_devices().await?;
+    let devices = icp_client.get_devices(tag).await?;
     for device in devices {
         eprintln!(
             "Try to encrypt data for device: {}: ed25519 public key is: {}",

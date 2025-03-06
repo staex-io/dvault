@@ -20,7 +20,7 @@ async fn test_all_public_data() {
     let res = agent
         .update(&canister_id, REGISTER_DEVICE_METHOD)
         .with_effective_canister_id(canister_id)
-        .with_arg(Encode!(&caller, &"".to_string()).unwrap())
+        .with_arg(Encode!(&caller, &"".to_string(), &"".to_string()).unwrap())
         .call_and_wait()
         .await
         .unwrap();
@@ -93,7 +93,7 @@ async fn test_all_private_data() {
     let res = agent
         .update(&canister_id, REGISTER_DEVICE_METHOD)
         .with_effective_canister_id(canister_id)
-        .with_arg(Encode!(&caller, &"".to_string()).unwrap())
+        .with_arg(Encode!(&caller, &"".to_string(), &"".to_string()).unwrap())
         .call_and_wait()
         .await
         .unwrap();

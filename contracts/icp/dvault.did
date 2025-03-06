@@ -1,6 +1,6 @@
 type Action = variant { Declared; Revoked };
 type CError = variant { Internal; NotFound };
-type Device = record { ed25519_public_key : text };
+type Device = record { tag : text; ed25519_public_key : text };
 type Notification = record {
   id : text;
   action : Action;
@@ -17,12 +17,12 @@ type Visibility = variant { Private; Public };
 service : {
   declare_private_data : (principal, text, text, text) -> (Result);
   declare_public_data : (principal, text, blob) -> (Result);
-  get_devices : () -> (Result_1) query;
+  get_devices : (opt text) -> (Result_1) query;
   get_last_notification : () -> (Result_2) query;
   get_private_data : (text) -> (Result_3) query;
   get_public_data : (text) -> (Result_4) query;
   read_last_notification : () -> (Result);
-  register_device : (principal, text) -> (Result);
+  register_device : (principal, text, text) -> (Result);
   revoke_private_data : (text) -> (Result);
   revoke_public_data : (text) -> (Result);
 }
