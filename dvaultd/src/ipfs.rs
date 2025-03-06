@@ -4,10 +4,20 @@ use serde::Deserialize;
 
 use crate::{map_io_err, map_io_err_ctx};
 
-const IPFS_API_URL: &str = "http://127.0.0.1:5001/api/v0";
+const API_URL: &str = "http://127.0.0.1:5001/api/v0";
 
 #[derive(Deserialize)]
-struct IPFSAddResponse {
+struct ErrorResponse {
+    #[serde(rename = "Message")]
+    message: String,
+    #[serde(rename = "Code")]
+    _c1ode: i64,
+    #[serde(rename = "Type")]
+    _err_type: String,
+}
+
+#[derive(Deserialize)]
+struct AddResponse {
     #[serde(alias = "Hash")]
     hash: String,
 }
@@ -29,7 +39,7 @@ impl Client {
             multipart::Form::new().text("name", "file").text("filename", filename.to_string()).text("file", file);
         let res = self
             .http_client
-            .post(format!("{}/add?quieter=true", IPFS_API_URL))
+            .post(format!("{}/add?quieter=true", API_URL))
             .multipart(form)
             .send()
             .await
@@ -42,13 +52,12 @@ impl Client {
         let parts: Vec<&[u8]> = buf.split(|b| *b == 10).collect();
         // -1 because last index is length-1 and one more -1 to get latest json from json list.
         let part = parts[parts.len() - 2];
-        let ipfs_add_res: IPFSAddResponse = serde_json::from_slice(part)
+        let ipfs_add_res: AddResponse = serde_json::from_slice(part)
             .map_err(|e| map_io_err_ctx(e, format!("failed to read add data response; body={:?}", part)))?;
         let cid = ipfs_add_res.hash;
         eprintln!("File was successfully uploaded to IPFS, CID: {:?}", cid);
 
-        let res =
-            self.http_client.post(format!("{}/pin/add?arg={}", IPFS_API_URL, cid)).send().await.map_err(map_io_err)?;
+        let res = self.http_client.post(format!("{}/pin/add?arg={}", API_URL, cid)).send().await.map_err(map_io_err)?;
         if res.status() != reqwest::StatusCode::OK {
             return Err(map_io_err(format!("invalid response status on pin: {}", res.status())));
         }
@@ -60,7 +69,7 @@ impl Client {
     pub(crate) async fn get_data(&self, cid: &str) -> std::io::Result<Vec<u8>> {
         let res = self
             .http_client
-            .post(format!("{}/cat?arg={}&progress=false", IPFS_API_URL, cid))
+            .post(format!("{}/cat?arg={}&progress=false", API_URL, cid))
             .send()
             .await
             .map_err(|e| map_io_err_ctx(e, "failed to get data from ipfs"))?;
@@ -71,5 +80,24 @@ impl Client {
         let mut data = Vec::new();
         B64_STANDARD.decode_vec(buf, &mut data).map_err(|e| map_io_err_ctx(e, "failed to decode data"))?;
         Ok(data)
+    }
+
+    pub(crate) async fn unpin_data(&self, cid: &str) -> std::io::Result<()> {
+        let res = self
+            .http_client
+            .post(format!("{}/pin/rm?arg={}&recursive=true", API_URL, cid))
+            .send()
+            .await
+            .map_err(|e| map_io_err_ctx(e, "failed to unpin data from ipfs"))?;
+        if res.status() != reqwest::StatusCode::OK {
+            let status = res.status();
+            let data: ErrorResponse = res.json().await.map_err(map_io_err)?;
+            return data
+                .message
+                .contains("not pinned or pinned indirectly")
+                .then_some(())
+                .ok_or(map_io_err(format!("invalid response status on unpin data: {}", status)));
+        }
+        Ok(())
     }
 }

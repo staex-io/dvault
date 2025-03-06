@@ -146,6 +146,18 @@ impl Client {
         Ok(res)
     }
 
+    pub(crate) async fn revoke_private_data(&self, id: &String) -> std::io::Result<()> {
+        let res = self
+            .agent
+            .update(&self.canister_id, dvault::REVOKE_PRIVATE_DATA_METHOD)
+            .with_effective_canister_id(self.canister_id)
+            .with_arg(Encode!(id).map_err(map_io_err)?)
+            .call_and_wait()
+            .await
+            .map_err(map_io_err)?;
+        Decode!(res.as_slice(), dvault::CResult<()>).map_err(map_io_err)?.map_err(map_io_err)
+    }
+
     async fn register_device(&self, sc_owner_public_key: Principal, dvault_public_key: &String) -> std::io::Result<()> {
         let res = self
             .agent

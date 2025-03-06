@@ -46,6 +46,8 @@ enum Commands {
         /// Data to broadcast.
         data: String,
     },
+    /// Revoke data.
+    Revoke { id: String },
 }
 
 #[tokio::main]
@@ -62,39 +64,9 @@ async fn main() -> std::io::Result<()> {
     let ipfs_client = ipfs::Client::new();
 
     match cli.command {
-        Commands::Run {} => {
-            let dvault_owner_public_key =
-                dvault_owner_public_key.ok_or(map_io_err("dvault owner public key is empty"))?;
-            let cipher = crypto::init_cipher(&dvault_private_key, dvault_owner_public_key)?;
-            loop {
-                if let Err(e) = run(&icp_client, &ipfs_client, &cipher).await {
-                    eprintln!("Failed to run iteration: {e}");
-                }
-                tokio::time::sleep(Duration::from_secs(1)).await;
-            }
-        }
-        Commands::Broadcast { data } => {
-            let devices = icp_client.get_devices().await?;
-            for device in devices {
-                eprintln!(
-                    "Try to encrypt data for device: {}: ed25519 public key is: {}",
-                    device.0, device.1.ed25519_public_key
-                );
-
-                let cipher = crypto::init_cipher(&dvault_private_key, device.1.ed25519_public_key)?;
-                let ciphertext = cipher.encrypt(data.as_bytes())?;
-                let ipfs_cid = ipfs_client.save_data("/", &ciphertext).await?;
-
-                let id = uuid::Uuid::new_v4().to_string();
-                let hash = Sha256::digest(&data).to_vec();
-                let mut hash_b64 = String::new();
-                B64_STANDARD.encode_string(hash, &mut hash_b64);
-
-                icp_client.declare_private_data(device.0, &id, hash_b64, ipfs_cid).await?;
-
-                eprintln!("Successfully broadcast private data to: {}: {}", device.0, id);
-            }
-        }
+        Commands::Run {} => run(&icp_client, &ipfs_client, dvault_owner_public_key, dvault_private_key).await?,
+        Commands::Broadcast { data } => broadcast(&icp_client, &ipfs_client, data, dvault_private_key).await?,
+        Commands::Revoke { id } => revoke(&icp_client, &ipfs_client, id).await?,
     }
     Ok(())
 }
@@ -105,6 +77,93 @@ pub(crate) fn map_io_err<T: ToString>(e: T) -> std::io::Error {
 
 pub(crate) fn map_io_err_ctx<T: ToString, C: ToString>(e: T, ctx: C) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::Other, format!("{}: {}", ctx.to_string().as_str(), e.to_string().as_str()))
+}
+
+async fn run(
+    icp_client: &icp::Client,
+    ipfs_client: &ipfs::Client,
+    dvault_owner_public_key: Option<String>,
+    dvault_private_key: String,
+) -> std::io::Result<()> {
+    let dvault_owner_public_key = dvault_owner_public_key.ok_or(map_io_err("dvault owner public key is empty"))?;
+    let cipher = crypto::init_cipher(&dvault_private_key, dvault_owner_public_key)?;
+    loop {
+        if let Err(e) = run_(icp_client, ipfs_client, &cipher).await {
+            eprintln!("Failed to run iteration: {e}");
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+}
+
+async fn run_(icp_client: &icp::Client, ipfs_client: &ipfs::Client, cipher: &crypto::Cipher) -> std::io::Result<()> {
+    let notification = icp_client.get_last_notification().await?;
+    if let Some(n) = notification {
+        match n.action {
+            dvault::Action::Revoked => {
+                eprintln!("There is new revokation, id: {}", n.id);
+                return icp_client.read_last_notification().await;
+            }
+            dvault::Action::Declared => eprintln!("There is new declaration, id: {}", n.id),
+        }
+
+        let private_data = icp_client.get_private_data(&n.id).await?;
+        let mut onchain_hash = Vec::new();
+        B64_STANDARD
+            .decode_vec(private_data.hash.as_bytes(), &mut onchain_hash)
+            .map_err(|e| map_io_err_ctx(e, "failed to decode onchain hash"))?;
+
+        let data = ipfs_client.get_data(&private_data.ipfs_cid).await?;
+        let plaintext = cipher.decrypt(&data, data.len())?;
+        let hash = Sha256::digest(&plaintext).to_vec();
+
+        if hash.ne(&onchain_hash) {
+            eprintln!(
+                "Received private plaintext from notification, but hashes are not equal: {:?}",
+                from_utf8(&plaintext)
+            );
+        } else {
+            eprintln!("Received private plaintext from notification: {:?}", from_utf8(&plaintext));
+        }
+
+        icp_client.read_last_notification().await?;
+    }
+    Ok(())
+}
+
+async fn broadcast(
+    icp_client: &icp::Client,
+    ipfs_client: &ipfs::Client,
+    data: String,
+    dvault_private_key: String,
+) -> std::io::Result<()> {
+    let devices = icp_client.get_devices().await?;
+    for device in devices {
+        eprintln!(
+            "Try to encrypt data for device: {}: ed25519 public key is: {}",
+            device.0, device.1.ed25519_public_key
+        );
+
+        let cipher = crypto::init_cipher(&dvault_private_key, device.1.ed25519_public_key)?;
+        let ciphertext = cipher.encrypt(data.as_bytes())?;
+        let ipfs_cid = ipfs_client.save_data("/", &ciphertext).await?;
+
+        let id = uuid::Uuid::new_v4().to_string();
+        let hash = Sha256::digest(&data).to_vec();
+        let mut hash_b64 = String::new();
+        B64_STANDARD.encode_string(hash, &mut hash_b64);
+
+        icp_client.declare_private_data(device.0, &id, hash_b64, ipfs_cid).await?;
+
+        eprintln!("Successfully broadcast private data to: {}: {}", device.0, id);
+    }
+    Ok(())
+}
+
+async fn revoke(icp_client: &icp::Client, ipfs_client: &ipfs::Client, id: String) -> std::io::Result<()> {
+    let info = icp_client.get_private_data(&id).await?;
+    ipfs_client.unpin_data(&info.ipfs_cid).await?;
+    icp_client.revoke_private_data(&id).await?;
+    Ok(())
 }
 
 fn prepare_keys(dvault_private_key_file: String, dvault_public_key_file: String) -> std::io::Result<(String, String)> {
@@ -131,33 +190,4 @@ fn prepare_key(file: &str) -> std::io::Result<Option<String>> {
             e => Err(e.into()),
         },
     }
-}
-
-async fn run(icp_client: &icp::Client, ipfs_client: &ipfs::Client, cipher: &crypto::Cipher) -> std::io::Result<()> {
-    let notification = icp_client.get_last_notification().await?;
-    if let Some(n) = notification {
-        eprintln!("There is new notification with id: {}", n.id);
-
-        let private_data = icp_client.get_private_data(&n.id).await?;
-        let mut onchain_hash = Vec::new();
-        B64_STANDARD
-            .decode_vec(private_data.hash.as_bytes(), &mut onchain_hash)
-            .map_err(|e| map_io_err_ctx(e, "failed to decode onchain hash"))?;
-
-        let data = ipfs_client.get_data(&private_data.ipfs_cid).await?;
-        let plaintext = cipher.decrypt(&data, data.len())?;
-        let hash = Sha256::digest(&plaintext).to_vec();
-
-        if hash.ne(&onchain_hash) {
-            eprintln!(
-                "Received private plaintext from notification, but hashes are not equal: {:?}",
-                from_utf8(&plaintext)
-            );
-        } else {
-            eprintln!("Received private plaintext from notification: {:?}", from_utf8(&plaintext));
-        }
-
-        icp_client.read_last_notification().await?;
-    }
-    Ok(())
 }

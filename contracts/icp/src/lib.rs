@@ -123,30 +123,77 @@ fn declare_private_data(device: Principal, id: String, hash: String, ipfs_cid: S
 
 // Revoke public data.
 #[ic_cdk::update]
-fn revoke_public_data(device: Principal, id: String) -> CResult<()> {
+fn revoke_public_data(id: String) -> CResult<()> {
     let caller = ic_cdk::api::caller();
-    revoke_public_data_(caller, device, id)
+    let devices = DEVICES.with(|inner| inner.borrow().get(&caller).ok_or(CError::NotFound))?;
+    for device in devices.inner {
+        if  PRINCIPAL_DATA.with(|pd_inner| -> Option<PublicData> {
+            return pd_inner.borrow().get(&device.0).and_then(|v| v.public_data.get(&id).cloned());
+        }).is_some() {
+            return revoke_public_data_(device.0, id);
+        }
+    }
+    Err(CError::NotFound)
 }
 
 // Revoke private data.
 #[ic_cdk::update]
-fn revoke_private_data(device: Principal, id: String) -> CResult<()> {
+fn revoke_private_data(id: String) -> CResult<()> {
     let caller = ic_cdk::api::caller();
-    revoke_private_data_(caller, device, id)
+    let devices = DEVICES.with(|inner| inner.borrow().get(&caller).ok_or(CError::NotFound))?;
+    for device in devices.inner {
+        if PRINCIPAL_DATA
+            .with(|pd_inner| -> Option<PrivateData> {
+                return pd_inner.borrow().get(&device.0).and_then(|v| v.private_data.get(&id).cloned());
+            })
+            .is_some()
+        {
+            return revoke_private_data_(device.0, id);
+        }
+    }
+    Err(CError::NotFound)
 }
 
 // Get on-chain public data.
 #[ic_cdk::query]
 fn get_public_data(id: String) -> CResult<PublicData> {
     let caller = ic_cdk::api::caller();
-    get_public_data_(caller, id)
+    match get_public_data_(caller, &id) {
+        Ok(data) => Ok(data),
+        Err(e) if e == CError::NotFound => {
+            let devices = DEVICES.with(|inner| inner.borrow().get(&caller).ok_or(CError::NotFound))?;
+            for device in devices.inner {
+                if let Some(data) = PRINCIPAL_DATA.with(|pd_inner| -> Option<PublicData> {
+                    return pd_inner.borrow().get(&device.0).and_then(|v| v.public_data.get(&id).cloned());
+                }) {
+                    return Ok(data);
+                }
+            }
+            Err(e)
+        }
+        Err(e) => Err(e),
+    }
 }
 
 // Get on-chain private data.
 #[ic_cdk::query]
 fn get_private_data(id: String) -> CResult<PrivateData> {
     let caller = ic_cdk::api::caller();
-    get_private_data_(caller, id)
+    match get_private_data_(caller, &id) {
+        Ok(data) => Ok(data),
+        Err(e) if e == CError::NotFound => {
+            let devices = DEVICES.with(|inner| inner.borrow().get(&caller).ok_or(CError::NotFound))?;
+            for device in devices.inner {
+                if let Some(data) = PRINCIPAL_DATA.with(|pd_inner| -> Option<PrivateData> {
+                    return pd_inner.borrow().get(&device.0).and_then(|v| v.private_data.get(&id).cloned());
+                }) {
+                    return Ok(data);
+                }
+            }
+            Err(e)
+        }
+        Err(e) => Err(e),
+    }
 }
 
 // Get on-chain notification.
@@ -189,14 +236,14 @@ fn get_devices() -> CResult<HashMap<Principal, Device>> {
     Ok(DEVICES.with(|inner| inner.borrow().get(&caller).unwrap_or_default().inner))
 }
 
-fn get_public_data_(principal: Principal, id: String) -> CResult<PublicData> {
+fn get_public_data_(principal: Principal, id: &String) -> CResult<PublicData> {
     let principal_data = PRINCIPAL_DATA.with(|inner| inner.borrow().get(&principal).unwrap_or_default());
-    Ok(principal_data.public_data.get(&id).ok_or(CError::NotFound)?.clone())
+    Ok(principal_data.public_data.get(id).ok_or(CError::NotFound)?.clone())
 }
 
-fn get_private_data_(principal: Principal, id: String) -> CResult<PrivateData> {
+fn get_private_data_(principal: Principal, id: &String) -> CResult<PrivateData> {
     let principal_data = PRINCIPAL_DATA.with(|inner| inner.borrow().get(&principal).unwrap_or_default());
-    Ok(principal_data.private_data.get(&id).ok_or(CError::NotFound)?.clone())
+    Ok(principal_data.private_data.get(id).ok_or(CError::NotFound)?.clone())
 }
 
 fn get_last_notification_(caller: Principal) -> CResult<Notification> {
@@ -236,18 +283,18 @@ fn declare_private_data_(device: Principal, id: String, hash: String, ipfs_cid: 
     Ok(())
 }
 
-fn revoke_public_data_(caller: Principal, device: Principal, id: String) -> CResult<()> {
-    let mut principal_data = PRINCIPAL_DATA.with(|inner| inner.borrow_mut().get(&caller).ok_or(CError::NotFound))?;
+fn revoke_public_data_(device: Principal, id: String) -> CResult<()> {
+    let mut principal_data = PRINCIPAL_DATA.with(|inner| inner.borrow_mut().get(&device).ok_or(CError::NotFound))?;
     principal_data.public_data.remove(&id);
-    PRINCIPAL_DATA.with(|inner| inner.borrow_mut().insert(caller, principal_data));
+    PRINCIPAL_DATA.with(|inner| inner.borrow_mut().insert(device, principal_data));
     add_notification(device, Action::Revoked, Visibility::Public, id)?;
     Ok(())
 }
 
-fn revoke_private_data_(caller: Principal, device: Principal, id: String) -> CResult<()> {
-    let mut principal_data = PRINCIPAL_DATA.with(|inner| inner.borrow_mut().get(&caller).ok_or(CError::NotFound))?;
+fn revoke_private_data_(device: Principal, id: String) -> CResult<()> {
+    let mut principal_data = PRINCIPAL_DATA.with(|inner| inner.borrow_mut().get(&device).ok_or(CError::NotFound))?;
     principal_data.private_data.remove(&id);
-    PRINCIPAL_DATA.with(|inner| inner.borrow_mut().insert(caller, principal_data));
+    PRINCIPAL_DATA.with(|inner| inner.borrow_mut().insert(device, principal_data));
     add_notification(device, Action::Revoked, Visibility::Private, id)?;
     Ok(())
 }
@@ -306,7 +353,7 @@ mod tests {
         let public_data = get_public_data_(caller, id.clone()).unwrap();
         assert_eq!(expected, public_data.data);
 
-        revoke_public_data_(caller, caller, id.clone()).unwrap();
+        revoke_public_data_(caller, id.clone()).unwrap();
         let err = get_public_data_(caller, id.clone()).unwrap_err();
         assert_eq!(CError::NotFound, err);
 
@@ -331,7 +378,7 @@ mod tests {
         assert_eq!(hash, private_data.hash);
         assert_eq!(ipfs_cid, private_data.ipfs_cid);
 
-        revoke_private_data_(caller, caller, id.clone()).unwrap();
+        revoke_private_data_(caller, id.clone()).unwrap();
         let err = get_private_data_(caller, id.clone()).unwrap_err();
         assert_eq!(CError::NotFound, err);
 

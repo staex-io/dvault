@@ -23,6 +23,6 @@ service : {
   get_public_data : (text) -> (Result_4) query;
   read_last_notification : () -> (Result);
   register_device : (principal, text) -> (Result);
-  revoke_private_data : (principal, text) -> (Result);
-  revoke_public_data : (principal, text) -> (Result);
+  revoke_private_data : (text) -> (Result);
+  revoke_public_data : (text) -> (Result);
 }
