@@ -4,7 +4,7 @@ use candid::{Decode, Encode, Principal};
 use dvault::{
     Action, CError, PrivateData, PublicData, Visibility, DECLARE_PRIVATE_DATA_METHOD, DECLARE_PUBLIC_DATA_METHOD,
     GET_LAST_NOTIFICATION_METHOD, GET_PRIVATE_DATA_METHOD, GET_PUBLIC_DATA_METHOD, READ_LAST_NOTIFICATION_METHOD,
-    REVOKE_PRIVATE_DATA_METHOD, REVOKE_PUBLIC_DATA_METHOD,
+    REGISTER_DEVICE_METHOD, REVOKE_PRIVATE_DATA_METHOD, REVOKE_PUBLIC_DATA_METHOD,
 };
 use ic_agent::Agent;
 
@@ -16,6 +16,15 @@ mod agent;
 async fn test_all_public_data() {
     let (agent, canister_id) = init_agent().await;
     let caller = agent.get_principal().unwrap();
+
+    let res = agent
+        .update(&canister_id, REGISTER_DEVICE_METHOD)
+        .with_effective_canister_id(canister_id)
+        .with_arg(Encode!(&caller, &"".to_string()).unwrap())
+        .call_and_wait()
+        .await
+        .unwrap();
+    Decode!(res.as_slice(), dvault::CResult<()>).unwrap().unwrap();
 
     let res = agent
         .query(&canister_id, GET_PUBLIC_DATA_METHOD)
@@ -55,7 +64,7 @@ async fn test_all_public_data() {
     let res = agent
         .update(&canister_id, REVOKE_PUBLIC_DATA_METHOD)
         .with_effective_canister_id(canister_id)
-        .with_arg(Encode!(&caller, &id).unwrap())
+        .with_arg(Encode!(&id).unwrap())
         .call_and_wait()
         .await
         .unwrap();
@@ -80,6 +89,15 @@ async fn test_all_public_data() {
 async fn test_all_private_data() {
     let (agent, canister_id) = init_agent().await;
     let caller = agent.get_principal().unwrap();
+
+    let res = agent
+        .update(&canister_id, REGISTER_DEVICE_METHOD)
+        .with_effective_canister_id(canister_id)
+        .with_arg(Encode!(&caller, &"".to_string()).unwrap())
+        .call_and_wait()
+        .await
+        .unwrap();
+    Decode!(res.as_slice(), dvault::CResult<()>).unwrap().unwrap();
 
     let res = agent
         .query(&canister_id, GET_PRIVATE_DATA_METHOD)
@@ -121,7 +139,7 @@ async fn test_all_private_data() {
     let res = agent
         .update(&canister_id, REVOKE_PRIVATE_DATA_METHOD)
         .with_effective_canister_id(canister_id)
-        .with_arg(Encode!(&caller, &id).unwrap())
+        .with_arg(Encode!(&id).unwrap())
         .call_and_wait()
         .await
         .unwrap();
