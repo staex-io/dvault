@@ -24,13 +24,22 @@ RUN RUSTFLAGS="-C target-feature=-crt-static" cargo build
 
 
 FROM alpine:3.21 AS app
+
 RUN apk add --no-cache alpine-sdk
-WORKDIR /root
-RUN  apk add --no-cache openssh bash
+RUN apk add --no-cache openssh bash
+
 RUN mkdir /var/run/sshd
 RUN ssh-keygen -A
+
 COPY --from=builder /app/target/debug/dvaultd /usr/local/bin/dvaultd
+
+WORKDIR /root
 COPY ./entrypoint.sh /root/entrypoint.sh
-RUN mkdir data
 COPY contracts/icp/.dfx/local/canister_ids.json /usr/local/bin/canister_ids.json
+
+RUN echo "PermitRootLogin yes" >> /etc/ssh/sshd_config
+RUN echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config
+RUN echo "root:root" | chpasswd
+
+RUN mkdir data
 ENTRYPOINT ["/root/entrypoint.sh"]
