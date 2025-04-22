@@ -36,6 +36,18 @@ struct Cli {
     /// Set up device tag.
     #[arg(long)]
     tag: Option<String>,
+    /// Set up ICP address.
+    #[arg(long)]
+    #[arg(default_value = "http://127.0.0.1:7777")]
+    icp_address: String,
+    /// Set up path to the ICP canister id file.
+    #[arg(long)]
+    #[arg(default_value = "../contracts/icp/.dfx/local/canister_ids.json")]
+    icp_canister_id_path: String,
+    /// Set up IPFS address.
+    #[arg(long)]
+    #[arg(default_value = "http://127.0.0.1:5001")]
+    ipfs_address: String,
     #[clap(subcommand)]
     command: Commands,
 }
@@ -62,6 +74,9 @@ async fn main() -> std::io::Result<()> {
     let sc_owner_public_key = cli.sc_owner_public_key;
     let sc_device_private_key_file = cli.sc_device_private_key_file;
     let tag = cli.tag;
+    let ic_address = cli.icp_address;
+    let icp_canister_id_path = cli.icp_canister_id_path;
+    let ipfs_address = cli.ipfs_address;
 
     let (dvault_private_key, dvault_public_key) = prepare_keys(dvault_private_key_file, dvault_public_key_file)?;
     let icp_client = icp::Client::new(
@@ -69,9 +84,11 @@ async fn main() -> std::io::Result<()> {
         tag.clone().unwrap_or_default(),
         &dvault_public_key,
         &sc_device_private_key_file,
+        ic_address,
+        icp_canister_id_path,
     )
     .await?;
-    let ipfs_client = ipfs::Client::new();
+    let ipfs_client = ipfs::Client::new(ipfs_address);
 
     match cli.command {
         Commands::Run {} => run(&icp_client, &ipfs_client, dvault_owner_public_key, dvault_private_key).await?,

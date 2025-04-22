@@ -30,12 +30,14 @@ impl Client {
         tag: String,
         dvault_public_key: &String,
         sc_device_private_key_file: &str,
+        icp_addaress:String,
+        icp_canister_id_path: String,
     ) -> std::io::Result<Client> {
         let identity =
             init_identity(sc_device_private_key_file).map_err(|e| map_io_err_ctx(e, "failed to init identity"))?;
 
         let agent = Agent::builder()
-            .with_url("http://127.0.0.1:7777")
+            .with_url(icp_addaress)
             .with_identity(identity)
             .build()
             .map_err(|e| map_io_err_ctx(e, "failed to init agent"))?;
@@ -44,7 +46,7 @@ impl Client {
         eprintln!("Using identity: {:?}", caller.to_text());
 
         let canisters_ids: CanisterIds =
-            serde_json::from_str(&std::fs::read_to_string("../contracts/icp/.dfx/local/canister_ids.json")?)?;
+            serde_json::from_str(&std::fs::read_to_string(icp_canister_id_path)?)?;
         let canister_id = Principal::from_text(canisters_ids.dvault.local).map_err(map_io_err)?;
 
         let client = Client { agent, canister_id };

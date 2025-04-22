@@ -14,7 +14,7 @@ start:
 	dfx start --clean --host 127.0.0.1:7777
 
 pre_install:
-	dfx canister create --specified-id bkyz2-fmaaa-aaaaa-qaaaq-cai dvault
+	dfx canister create dvault
 
 install: pre_install update_candid
 	dfx canister install --async-call -y dvault --wasm ../../target/wasm32-unknown-unknown/release/dvault.wasm

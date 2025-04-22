@@ -4,8 +4,6 @@ use serde::Deserialize;
 
 use crate::{map_io_err, map_io_err_ctx};
 
-const API_URL: &str = "http://127.0.0.1:5001/api/v0";
-
 #[derive(Deserialize)]
 struct ErrorResponse {
     #[serde(rename = "Message")]
@@ -23,13 +21,17 @@ struct AddResponse {
 }
 
 pub(crate) struct Client {
+    ipfs_address: String,
     http_client: reqwest::Client,
 }
 
 impl Client {
-    pub(crate) fn new() -> Client {
+    pub(crate) fn new(ipfs_address: String) -> Client {
         let http_client = reqwest::Client::new();
-        Client { http_client }
+        Client {
+            ipfs_address,
+            http_client,
+        }
     }
 
     pub(crate) async fn save_data<T: ToString>(&self, filename: T, data: &[u8]) -> std::io::Result<String> {
@@ -39,7 +41,7 @@ impl Client {
             multipart::Form::new().text("name", "file").text("filename", filename.to_string()).text("file", file);
         let res = self
             .http_client
-            .post(format!("{}/add?quieter=true", API_URL))
+            .post(format!("{}/add?quieter=true", self.prepare_url()))
             .multipart(form)
             .send()
             .await
@@ -57,7 +59,12 @@ impl Client {
         let cid = ipfs_add_res.hash;
         eprintln!("File was successfully uploaded to IPFS, CID: {:?}", cid);
 
-        let res = self.http_client.post(format!("{}/pin/add?arg={}", API_URL, cid)).send().await.map_err(map_io_err)?;
+        let res = self
+            .http_client
+            .post(format!("{}/pin/add?arg={}", self.prepare_url(), cid))
+            .send()
+            .await
+            .map_err(map_io_err)?;
         if res.status() != reqwest::StatusCode::OK {
             return Err(map_io_err(format!("invalid response status on pin: {}", res.status())));
         }
@@ -69,7 +76,7 @@ impl Client {
     pub(crate) async fn get_data(&self, cid: &str) -> std::io::Result<Vec<u8>> {
         let res = self
             .http_client
-            .post(format!("{}/cat?arg={}&progress=false", API_URL, cid))
+            .post(format!("{}/cat?arg={}&progress=false", self.prepare_url(), cid))
             .send()
             .await
             .map_err(|e| map_io_err_ctx(e, "failed to get data from ipfs"))?;
@@ -85,7 +92,7 @@ impl Client {
     pub(crate) async fn unpin_data(&self, cid: &str) -> std::io::Result<()> {
         let res = self
             .http_client
-            .post(format!("{}/pin/rm?arg={}&recursive=true", API_URL, cid))
+            .post(format!("{}/pin/rm?arg={}&recursive=true", self.prepare_url(), cid))
             .send()
             .await
             .map_err(|e| map_io_err_ctx(e, "failed to unpin data from ipfs"))?;
@@ -99,5 +106,9 @@ impl Client {
                 .ok_or(map_io_err(format!("invalid response status on unpin data: {}", status)));
         }
         Ok(())
+    }
+
+    fn prepare_url(&self) -> String {
+        format!("{}/api/v0", self.ipfs_address)
     }
 }
