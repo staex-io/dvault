@@ -89,6 +89,9 @@ async fn main() -> std::io::Result<()> {
     )
     .await?;
     let ipfs_client = ipfs::Client::new(ipfs_address);
+    if let Some(tag) = tag.clone() {
+        eprintln!("Using tag for the device: {}", tag);
+    }
 
     match cli.command {
         Commands::Run {} => run(&icp_client, &ipfs_client, dvault_owner_public_key, dvault_private_key).await?,
