@@ -20,6 +20,7 @@ struct AddResponse {
     hash: String,
 }
 
+#[derive(Clone)]
 pub(crate) struct Client {
     ipfs_address: String,
     http_client: reqwest::Client,

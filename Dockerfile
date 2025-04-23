@@ -28,18 +28,10 @@ FROM alpine:3.21 AS app
 RUN apk add --no-cache alpine-sdk
 RUN apk add --no-cache openssh bash
 
-RUN mkdir /var/run/sshd
-RUN ssh-keygen -A
+WORKDIR /root
 
 COPY --from=builder /app/target/debug/dvaultd /usr/local/bin/dvaultd
-
-WORKDIR /root
 COPY ./entrypoint.sh /root/entrypoint.sh
 COPY contracts/icp/.dfx/local/canister_ids.json /usr/local/bin/canister_ids.json
 
-RUN echo "PermitRootLogin yes" >> /etc/ssh/sshd_config
-RUN echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config
-RUN echo "root:root" | chpasswd
-
-RUN mkdir data
 ENTRYPOINT ["/root/entrypoint.sh"]

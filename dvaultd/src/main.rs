@@ -1,7 +1,14 @@
-use std::{fs, io, str::from_utf8, time::Duration};
+use std::{
+    fs::{self, OpenOptions},
+    io::{self, Write},
+    str::from_utf8,
+    time::Duration,
+};
 
 use base64::{engine::general_purpose::STANDARD as B64_STANDARD, Engine};
+use candid::Principal;
 use clap::{Parser, Subcommand};
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::contracts::icp;
@@ -9,6 +16,18 @@ use crate::contracts::icp;
 mod contracts;
 mod crypto;
 mod ipfs;
+
+#[derive(clap::ValueEnum, Clone, Serialize, Deserialize)]
+enum DataType {
+    #[serde(rename = "ssh-public-key")]
+    SSHPublicKey,
+}
+
+#[derive(Serialize, Deserialize)]
+struct BroadcastData<T: Serialize> {
+    dtype: DataType,
+    buf: T,
+}
 
 /// Command line utility to interact with dVault daemon.
 #[derive(Parser)]
@@ -58,8 +77,10 @@ enum Commands {
     Run {},
     /// Broadcast data.
     Broadcast {
-        /// Data to broadcast.
-        data: String,
+        /// Data type to broadcast.
+        dtype: DataType,
+        /// Actual data to broadcast.
+        buf: String,
     },
     /// Revoke data.
     Revoke { id: String },
@@ -95,7 +116,9 @@ async fn main() -> std::io::Result<()> {
 
     match cli.command {
         Commands::Run {} => run(&icp_client, &ipfs_client, dvault_owner_public_key, dvault_private_key).await?,
-        Commands::Broadcast { data } => broadcast(&icp_client, &ipfs_client, data, dvault_private_key, tag).await?,
+        Commands::Broadcast { dtype, buf } => {
+            broadcast(icp_client, ipfs_client, dtype, buf, dvault_private_key, tag).await?
+        }
         Commands::Revoke { id } => revoke(&icp_client, &ipfs_client, id).await?,
     }
     Ok(())
@@ -153,6 +176,9 @@ async fn run_(icp_client: &icp::Client, ipfs_client: &ipfs::Client, cipher: &cry
             );
         } else {
             eprintln!("Received private plaintext from notification: {:?}", from_utf8(&plaintext));
+            if let Err(e) = process_data(plaintext) {
+                eprintln!("Failed to process received data: {e}")
+            }
         }
 
         icp_client.read_last_notification().await?;
@@ -160,33 +186,74 @@ async fn run_(icp_client: &icp::Client, ipfs_client: &ipfs::Client, cipher: &cry
     Ok(())
 }
 
+fn process_data(data: Vec<u8>) -> std::io::Result<()> {
+    let data: BroadcastData<String> =
+        serde_json::from_slice(&data).map_err(|e| map_io_err_ctx(e, "failed to decode data"))?;
+    match data.dtype {
+        DataType::SSHPublicKey => apply_ssh_public_key(&data.buf),
+    }
+}
+
+fn apply_ssh_public_key(public_key: &str) -> std::io::Result<()> {
+    let mut file = OpenOptions::new().create(true).append(true).open("/root/.ssh/authorized_keys")?;
+    writeln!(file, "{}", public_key)?;
+    eprintln!("Successfully added new public key to the SSH daemon");
+    Ok(())
+}
+
 async fn broadcast(
-    icp_client: &icp::Client,
-    ipfs_client: &ipfs::Client,
-    data: String,
+    icp_client: icp::Client,
+    ipfs_client: ipfs::Client,
+    dtype: DataType,
+    buf: String,
     dvault_private_key: String,
     tag: Option<String>,
 ) -> std::io::Result<()> {
+    let data = serde_json::to_vec(&BroadcastData { dtype, buf })?;
     let devices = icp_client.get_devices(tag).await?;
+    let mut joins = vec![];
     for device in devices {
-        eprintln!(
-            "Try to encrypt data for device: {}: ed25519 public key is: {}",
-            device.0, device.1.ed25519_public_key
-        );
-
-        let cipher = crypto::init_cipher(&dvault_private_key, device.1.ed25519_public_key)?;
-        let ciphertext = cipher.encrypt(data.as_bytes())?;
-        let ipfs_cid = ipfs_client.save_data("/", &ciphertext).await?;
-
-        let id = uuid::Uuid::new_v4().to_string();
-        let hash = Sha256::digest(&data).to_vec();
-        let mut hash_b64 = String::new();
-        B64_STANDARD.encode_string(hash, &mut hash_b64);
-
-        icp_client.declare_private_data(device.0, &id, hash_b64, ipfs_cid).await?;
-
-        eprintln!("Successfully broadcast private data to: {}: {}", device.0, id);
+        let icp_client_ = icp_client.clone();
+        let ipfs_client_ = ipfs_client.clone();
+        let dvault_private_key_ = dvault_private_key.clone();
+        let data_ = data.clone();
+        let join = tokio::spawn(async move {
+            if let Err(e) = broadcast_(icp_client_, ipfs_client_, dvault_private_key_, data_, device).await {
+                eprintln!("Failed to broadcast: {e}")
+            }
+        });
+        joins.push(join);
     }
+    for join in joins {
+        if let Err(e) = join.await {
+            eprintln!("Failed to wait for broadcasting thread: {e}")
+        }
+    }
+    Ok(())
+}
+
+async fn broadcast_(
+    icp_client: icp::Client,
+    ipfs_client: ipfs::Client,
+    dvault_private_key: String,
+    data: Vec<u8>,
+    device: (Principal, dvault::Device),
+) -> std::io::Result<()> {
+    eprintln!("Try to encrypt data for device: {}: ed25519 public key is: {}", device.0, device.1.ed25519_public_key);
+
+    let cipher = crypto::init_cipher(&dvault_private_key, device.1.ed25519_public_key)?;
+    let ciphertext = cipher.encrypt(&data)?;
+    let ipfs_cid = ipfs_client.save_data("/", &ciphertext).await?;
+
+    let id = uuid::Uuid::new_v4().to_string();
+    let hash = Sha256::digest(&data).to_vec();
+    let mut hash_b64 = String::new();
+    B64_STANDARD.encode_string(hash, &mut hash_b64);
+
+    icp_client.declare_private_data(device.0, &id, hash_b64, ipfs_cid).await?;
+
+    eprintln!("Successfully broadcast private data to: {}: {}", device.0, id);
+
     Ok(())
 }
 

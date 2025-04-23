@@ -19,6 +19,7 @@ struct CanisterId {
     local: String,
 }
 
+#[derive(Clone)]
 pub(crate) struct Client {
     agent: Agent,
     canister_id: Principal,
@@ -30,7 +31,7 @@ impl Client {
         tag: String,
         dvault_public_key: &String,
         sc_device_private_key_file: &str,
-        icp_addaress:String,
+        icp_addaress: String,
         icp_canister_id_path: String,
     ) -> std::io::Result<Client> {
         let identity =
@@ -45,8 +46,7 @@ impl Client {
         let caller = agent.get_principal().map_err(|e| map_io_err_ctx(e, "failed to get agent principal"))?;
         eprintln!("Using identity: {:?}", caller.to_text());
 
-        let canisters_ids: CanisterIds =
-            serde_json::from_str(&std::fs::read_to_string(icp_canister_id_path)?)?;
+        let canisters_ids: CanisterIds = serde_json::from_str(&std::fs::read_to_string(icp_canister_id_path)?)?;
         let canister_id = Principal::from_text(canisters_ids.dvault.local).map_err(map_io_err)?;
 
         let client = Client { agent, canister_id };
