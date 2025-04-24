@@ -5,6 +5,7 @@ type Notification = record {
   id : text;
   action : Action;
   visibility : Visibility;
+  ipfs_cid : opt text;
 };
 type PrivateData = record { hash : text; ipfs_cid : text };
 type PublicData = record { data : blob };

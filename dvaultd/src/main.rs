@@ -2,6 +2,7 @@ use std::{
     fs::{self, OpenOptions},
     io::{self, Write},
     os::unix::fs::OpenOptionsExt,
+    process::{ExitCode, ExitStatus},
     str::from_utf8,
     time::Duration,
 };
@@ -189,6 +190,9 @@ async fn run_(icp_client: &icp::Client, ipfs_client: &ipfs::Client, cipher: &cry
         match n.action {
             dvault::Action::Revoked => {
                 eprintln!("There is new revokation, id: {}", n.id);
+                if let Some(ipfs_cid) = n.ipfs_cid {
+                    handle_revoke(ipfs_client, ipfs_cid, cipher).await?;
+                }
                 return icp_client.read_last_notification().await;
             }
             dvault::Action::Declared => eprintln!("There is new declaration, id: {}", n.id),
@@ -214,6 +218,32 @@ async fn run_(icp_client: &icp::Client, ipfs_client: &ipfs::Client, cipher: &cry
         }
 
         icp_client.read_last_notification().await?;
+    }
+    Ok(())
+}
+
+async fn handle_revoke(ipfs_client: &ipfs::Client, ipfs_cid: String, cipher: &crypto::Cipher) -> std::io::Result<()> {
+    let data = ipfs_client.get_data(&ipfs_cid).await?;
+    let plaintext = cipher.decrypt(&data, data.len())?;
+    let data: BroadcastData =
+        serde_json::from_slice(&plaintext).map_err(|e| map_io_err_ctx(e, "failed to decode data"))?;
+    match data.dtype {
+        DataType::SSHAuthKey => revoke_ssh_auth_key(data.buf.try_into()?),
+        _ => Ok(()),
+    }
+}
+
+fn revoke_ssh_auth_key(pub_key: String) -> std::io::Result<()> {
+    let res = std::process::Command::new("sh")
+        .args(vec![
+            "-c",
+            &format!("sed -i '/{}/d' ~/.ssh/authorized_keys", pub_key.replace("/", r"\/")),
+        ])
+        .output()?;
+    eprintln!("SSH authorized key was revoked: {}", res.status);
+    if !res.status.success() {
+        eprintln!("stdout: {:?}", from_utf8(&res.stdout));
+        eprintln!("stderr: {:?}", from_utf8(&res.stderr));
     }
     Ok(())
 }

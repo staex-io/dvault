@@ -80,6 +80,7 @@ pub struct Notification {
     pub action: Action,
     pub visibility: Visibility,
     pub id: String,
+    pub ipfs_cid: Option<String>,
 }
 
 #[derive(CandidType, Deserialize, Clone, PartialEq)]
@@ -283,7 +284,7 @@ fn declare_public_data_(device: Principal, id: String, data: Vec<u8>) -> CResult
     let mut principal_data = PRINCIPAL_DATA.with(|inner| inner.borrow().get(&device).unwrap_or_default());
     principal_data.public_data.insert(id.clone(), PublicData { data });
     PRINCIPAL_DATA.with(|inner| inner.borrow_mut().insert(device, principal_data));
-    add_notification(device, Action::Declared, Visibility::Public, id)?;
+    add_notification(device, Action::Declared, Visibility::Public, id, None)?;
     Ok(())
 }
 
@@ -291,7 +292,7 @@ fn declare_private_data_(device: Principal, id: String, hash: String, ipfs_cid: 
     let mut principal_data = PRINCIPAL_DATA.with(|inner| inner.borrow().get(&device).unwrap_or_default());
     principal_data.private_data.insert(id.clone(), PrivateData { hash, ipfs_cid });
     PRINCIPAL_DATA.with(|inner| inner.borrow_mut().insert(device, principal_data));
-    add_notification(device, Action::Declared, Visibility::Private, id)?;
+    add_notification(device, Action::Declared, Visibility::Private, id, None)?;
     Ok(())
 }
 
@@ -299,21 +300,33 @@ fn revoke_public_data_(device: Principal, id: String) -> CResult<()> {
     let mut principal_data = PRINCIPAL_DATA.with(|inner| inner.borrow_mut().get(&device).ok_or(CError::NotFound))?;
     principal_data.public_data.remove(&id);
     PRINCIPAL_DATA.with(|inner| inner.borrow_mut().insert(device, principal_data));
-    add_notification(device, Action::Revoked, Visibility::Public, id)?;
+    add_notification(device, Action::Revoked, Visibility::Public, id, None)?;
     Ok(())
 }
 
 fn revoke_private_data_(device: Principal, id: String) -> CResult<()> {
     let mut principal_data = PRINCIPAL_DATA.with(|inner| inner.borrow_mut().get(&device).ok_or(CError::NotFound))?;
+    let data = principal_data.private_data.get(&id).ok_or(CError::NotFound)?.clone();
     principal_data.private_data.remove(&id);
     PRINCIPAL_DATA.with(|inner| inner.borrow_mut().insert(device, principal_data));
-    add_notification(device, Action::Revoked, Visibility::Private, id)?;
+    add_notification(device, Action::Revoked, Visibility::Private, id, Some(data.ipfs_cid))?;
     Ok(())
 }
 
-fn add_notification(caller: Principal, action: Action, visibility: Visibility, id: String) -> CResult<()> {
+fn add_notification(
+    caller: Principal,
+    action: Action,
+    visibility: Visibility,
+    id: String,
+    ipfs_cid: Option<String>,
+) -> CResult<()> {
     let mut notifications = NOTIFICATIONS.with(|inner| inner.borrow().get(&caller).unwrap_or_default());
-    notifications.inner.push(Notification { action, visibility, id });
+    notifications.inner.push(Notification {
+        action,
+        visibility,
+        id,
+        ipfs_cid,
+    });
     NOTIFICATIONS.with(|inner| inner.borrow_mut().insert(caller, notifications));
     Ok(())
 }
