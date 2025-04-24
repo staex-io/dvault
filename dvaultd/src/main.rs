@@ -2,7 +2,6 @@ use std::{
     fs::{self, OpenOptions},
     io::{self, Write},
     os::unix::fs::OpenOptionsExt,
-    process::{ExitCode, ExitStatus},
     str::from_utf8,
     time::Duration,
 };
