@@ -1,6 +1,7 @@
 use std::{
     fs::{self, OpenOptions},
     io::{self, Write},
+    os::unix::fs::OpenOptionsExt,
     str::from_utf8,
     time::Duration,
 };
@@ -19,14 +20,48 @@ mod ipfs;
 
 #[derive(clap::ValueEnum, Clone, Serialize, Deserialize)]
 enum DataType {
-    #[serde(rename = "ssh-public-key")]
-    SSHPublicKey,
+    #[serde(rename = "ssh-auth-key")]
+    SSHAuthKey,
+    #[serde(rename = "ssh-key-pair")]
+    SSHKeyPair,
 }
 
 #[derive(Serialize, Deserialize)]
-struct BroadcastData<T: Serialize> {
+enum DataValue {
+    String(String),
+    SSHKeyPair(SSHKeyPair),
+}
+
+impl TryInto<String> for DataValue {
+    type Error = std::io::Error;
+    fn try_into(self) -> Result<String, Self::Error> {
+        if let DataValue::String(s) = self {
+            return Ok(s);
+        }
+        Err(map_io_err("data value is not string"))
+    }
+}
+
+impl TryInto<SSHKeyPair> for DataValue {
+    type Error = std::io::Error;
+    fn try_into(self) -> Result<SSHKeyPair, Self::Error> {
+        if let DataValue::SSHKeyPair(key_pair) = self {
+            return Ok(key_pair);
+        }
+        Err(map_io_err("data value is not ssh key pair"))
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct SSHKeyPair {
+    priv_key: String,
+    pub_key: String,
+}
+
+#[derive(Serialize, Deserialize)]
+struct BroadcastData {
     dtype: DataType,
-    buf: T,
+    buf: DataValue,
 }
 
 /// Command line utility to interact with dVault daemon.
@@ -174,11 +209,8 @@ async fn run_(icp_client: &icp::Client, ipfs_client: &ipfs::Client, cipher: &cry
                 "Received private plaintext from notification, but hashes are not equal: {:?}",
                 from_utf8(&plaintext)
             );
-        } else {
-            eprintln!("Received private plaintext from notification: {:?}", from_utf8(&plaintext));
-            if let Err(e) = process_data(plaintext) {
-                eprintln!("Failed to process received data: {e}")
-            }
+        } else if let Err(e) = process_data(plaintext) {
+            eprintln!("Failed to process received data: {e}")
         }
 
         icp_client.read_last_notification().await?;
@@ -187,17 +219,28 @@ async fn run_(icp_client: &icp::Client, ipfs_client: &ipfs::Client, cipher: &cry
 }
 
 fn process_data(data: Vec<u8>) -> std::io::Result<()> {
-    let data: BroadcastData<String> =
-        serde_json::from_slice(&data).map_err(|e| map_io_err_ctx(e, "failed to decode data"))?;
+    let data: BroadcastData = serde_json::from_slice(&data).map_err(|e| map_io_err_ctx(e, "failed to decode data"))?;
     match data.dtype {
-        DataType::SSHPublicKey => apply_ssh_public_key(&data.buf),
+        DataType::SSHAuthKey => apply_ssh_auth_key(data.buf.try_into()?),
+        DataType::SSHKeyPair => apply_ssh_key_pair(data.buf.try_into()?),
     }
 }
 
-fn apply_ssh_public_key(public_key: &str) -> std::io::Result<()> {
+fn apply_ssh_auth_key(pub_key: String) -> std::io::Result<()> {
     let mut file = OpenOptions::new().create(true).append(true).open("/root/.ssh/authorized_keys")?;
-    writeln!(file, "{}", public_key)?;
-    eprintln!("Successfully added new public key to the SSH daemon");
+    writeln!(file, "{}", pub_key)?;
+    eprintln!("Successfully added new public key to the SSH daemon auth keys");
+    Ok(())
+}
+
+fn apply_ssh_key_pair(key_pair: SSHKeyPair) -> std::io::Result<()> {
+    let mut priv_key_file =
+        OpenOptions::new().create(true).write(true).truncate(true).mode(0o600).open("/root/.ssh/key")?;
+    let mut pub_key_file =
+        OpenOptions::new().create(true).write(true).truncate(true).mode(0o600).open("/root/.ssh/key.pub")?;
+    writeln!(priv_key_file, "{}", key_pair.priv_key)?;
+    writeln!(pub_key_file, "{}", key_pair.pub_key)?;
+    eprintln!("Successfully added new key pair to the SSH daemon");
     Ok(())
 }
 
@@ -209,7 +252,7 @@ async fn broadcast(
     dvault_private_key: String,
     tag: Option<String>,
 ) -> std::io::Result<()> {
-    let data = serde_json::to_vec(&BroadcastData { dtype, buf })?;
+    let data = prepare_broadcast_data(dtype, buf)?;
     let devices = icp_client.get_devices(tag).await?;
     let mut joins = vec![];
     for device in devices {
@@ -230,6 +273,27 @@ async fn broadcast(
         }
     }
     Ok(())
+}
+
+fn prepare_broadcast_data(dtype: DataType, buf: String) -> std::io::Result<Vec<u8>> {
+    serde_json::to_vec(&match dtype {
+        DataType::SSHAuthKey => BroadcastData {
+            dtype,
+            buf: DataValue::String(buf),
+        },
+        DataType::SSHKeyPair => BroadcastData {
+            dtype,
+            buf: DataValue::SSHKeyPair(prepare_ssh_key_pair(buf)?),
+        },
+    })
+    .map_err(map_io_err)
+}
+
+fn prepare_ssh_key_pair(buf: String) -> std::io::Result<SSHKeyPair> {
+    let (priv_path, pub_path) = buf.split_once(":").ok_or(map_io_err("failed to split"))?;
+    let priv_key = std::fs::read_to_string(priv_path)?;
+    let pub_key = std::fs::read_to_string(pub_path)?;
+    Ok(SSHKeyPair { priv_key, pub_key })
 }
 
 async fn broadcast_(

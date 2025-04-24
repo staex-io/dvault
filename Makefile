@@ -20,3 +20,7 @@ connect_client:
 
 server_ip:
 	docker network inspect bridge | jq -r '.[0].Containers[] | select(.Name=="dvaultd_server") | .IPv4Address'
+
+generate_ssh_key:
+	mkdir .ssh
+	ssh-keygen -t ed25519 -f .ssh/key -q -N ""
